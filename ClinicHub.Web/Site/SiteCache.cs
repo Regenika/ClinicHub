@@ -62,6 +62,9 @@ public sealed class SiteCache(DbConnectionStore store, TimeProvider clock, ILogg
         }
     }
 
+    /// <summary>После правки в админке: следующие запросы читают базу заново.</summary>
+    public void Clear() => _items.Clear();
+
     /// <summary>Ошибка связи с базой (таймаут, сервер не отвечает), а не ошибка в коде.</summary>
     public static bool IsDatabaseUnavailable(Exception ex) => ex switch
     {

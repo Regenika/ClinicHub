@@ -31,6 +31,9 @@ public sealed class DbSiteCatalog(IDbContextFactory<SiteDbContext> dbFactory, Db
     private volatile Snapshot _snapshot = Empty;
     private int _refreshing;
 
+    /// <summary>После правки в админке: следующее обращение читает каталог из базы.</summary>
+    public void Invalidate() => _snapshot = _snapshot with { LoadedAt = DateTimeOffset.MinValue };
+
     public IReadOnlyList<ServiceItem> Services => Current().Services;
     public IReadOnlyList<DoctorItem> Doctors => Current().Doctors;
 
@@ -40,9 +43,10 @@ public sealed class DbSiteCatalog(IDbContextFactory<SiteDbContext> dbFactory, Db
         if (store.State != DbState.Ready || clock.GetUtcNow() - s.LoadedAt < MaxAge)
             return s;
 
-        if (ReferenceEquals(s, Empty))
+        if (s.LoadedAt == DateTimeOffset.MinValue)
         {
-            // Первое обращение после запуска: без каталога страница пустая, поэтому ждём загрузку.
+            // Первое обращение после запуска (без каталога страница пустая) или правка в админке (редактор
+            // сразу хочет увидеть результат) — ждём загрузку.
             Load();
             return _snapshot;
         }

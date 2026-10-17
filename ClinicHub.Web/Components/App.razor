@@ -14,8 +14,18 @@
 
 <body>
     @* Публичный сайт работает без JavaScript: формы и переходы — обычные запросы.
-       blazor.web.js подключим, когда появятся интерактивные кабинет и админка. *@
+       blazor.web.js (канал интерактивных компонентов) грузится только в админке. *@
     <Routes />
+    @if (IsAdmin)
+    {
+        <script src="_framework/blazor.web.js"></script>
+    }
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private bool IsAdmin => HttpContext?.Request.Path.StartsWithSegments("/admin") == true;
+}

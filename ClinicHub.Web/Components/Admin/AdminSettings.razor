@@ -1,0 +1,79 @@
+@page "/admin/nastroiki"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Web.Data
+@inject CatalogAdmin Catalog
+
+<PageTitle>Настройки сайта — админка</PageTitle>
+
+<section class="stack-lg">
+    <h1 class="h2">Настройки сайта</h1>
+    <p class="muted">Эти данные показываются в шапке, подвале, на главной и в микроразметке для поисковиков. Значения в [скобках] — заглушки.</p>
+
+    @if (form is not null)
+    {
+        <EditForm Model="form" OnSubmit="SaveAsync" class="stack setup__form admin-form">
+            <h2 class="h3">Клиника</h2>
+            <div class="admin-form__row">
+                <Field Label="Название" @bind-Value="form.Name" />
+                <Field Label="Город" @bind-Value="form.City" />
+            </div>
+            <Field Label="Слоган (под названием и в заголовке главной)" @bind-Value="form.Tagline" />
+            <div class="admin-form__row">
+                <Field Label="Юрлицо" @bind-Value="form.LegalName" />
+                <Field Label="Номер лицензии" @bind-Value="form.License" />
+            </div>
+
+            <h2 class="h3">Контакты</h2>
+            <div class="admin-form__row">
+                <Field Label="Телефон" @bind-Value="form.Phone" Placeholder="+7 911 210-00-50" />
+                <Field Label="Часы работы" @bind-Value="form.Hours" Placeholder="Пн–Сб 10:00–20:00" />
+            </div>
+            <div class="admin-form__row">
+                <Field Label="Адрес" @bind-Value="form.Address" />
+                <Field Label="Метро" @bind-Value="form.Metro" />
+            </div>
+
+            <h2 class="h3">Ссылки</h2>
+            <div class="admin-form__row">
+                <Field Label="Telegram" @bind-Value="form.TelegramUrl" Placeholder="https://t.me/…" />
+                <Field Label="MAX" @bind-Value="form.MaxUrl" />
+                <Field Label="ВКонтакте" @bind-Value="form.VkUrl" />
+            </div>
+            <div class="admin-form__row">
+                <Field Label="ПроДокторов: ссылка" @bind-Value="form.ProDoktorovUrl" />
+                <Field Label="ПроДокторов: рейтинг" @bind-Value="form.ProDoktorovRating" Placeholder="4,9" />
+            </div>
+            <div class="admin-form__row">
+                <Field Label="Яндекс Карты: ссылка" @bind-Value="form.YandexMapsUrl" />
+                <Field Label="Яндекс Карты: рейтинг" @bind-Value="form.YandexMapsRating" Placeholder="5,0" />
+            </div>
+            <Field Label="Адрес сайта для поисковиков (пусто — по адресу запроса; перед публикацией заполнить)" @bind-Value="form.BaseUrl" Placeholder="https://regenika.ru" />
+
+            @if (saved)
+            {
+                <p class="notice" role="status">Сохранено. На этом компьютере уже видно, на других — в течение 30 секунд.</p>
+            }
+            <div class="row-wrap">
+                <button class="btn btn--primary" type="submit" disabled="@busy">Сохранить</button>
+            </div>
+        </EditForm>
+    }
+</section>
+
+@code {
+    private SiteSettings? form;
+    private bool saved;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync() => form = await Catalog.SettingsAsync();
+
+    private async Task SaveAsync()
+    {
+        busy = true;
+        await Catalog.SaveSettingsAsync(form!);
+        busy = false;
+        saved = true;
+    }
+}

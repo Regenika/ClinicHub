@@ -111,6 +111,42 @@ namespace ClinicHub.Web.Data.Migrations
                     b.ToTable("CatalogDoctorServices", "site");
                 });
 
+            modelBuilder.Entity("ClinicHub.Web.Data.CatalogPriceChange", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("NewPrice")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("OldPrice")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("ServiceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceId", "ChangedAt");
+
+                    b.ToTable("CatalogPriceChanges", "site");
+                });
+
             modelBuilder.Entity("ClinicHub.Web.Data.CatalogService", b =>
                 {
                     b.Property<int>("Id")
@@ -157,6 +193,46 @@ namespace ClinicHub.Web.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("CatalogServices", "site");
+                });
+
+            modelBuilder.Entity("ClinicHub.Web.Data.Editor", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Login")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Login")
+                        .IsUnique();
+
+                    b.ToTable("Editors", "site");
                 });
 
             modelBuilder.Entity("ClinicHub.Web.Data.Page", b =>
@@ -356,6 +432,17 @@ namespace ClinicHub.Web.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Doctor");
+
+                    b.Navigation("Service");
+                });
+
+            modelBuilder.Entity("ClinicHub.Web.Data.CatalogPriceChange", b =>
+                {
+                    b.HasOne("ClinicHub.Web.Data.CatalogService", "Service")
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Service");
                 });
