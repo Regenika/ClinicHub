@@ -172,6 +172,9 @@ public sealed class DbConnectionStore(
         var error = await PrepareDatabaseAsync(cs, ct);
         if (error is null)
         {
+            // Иначе в журнале видны только ошибки, и кажется, что база так и не подключилась.
+            if (State == DbState.Failed)
+                logger.LogInformation("База сайта снова доступна");
             State = DbState.Ready;
             LastError = null;
             return;
