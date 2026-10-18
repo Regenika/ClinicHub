@@ -38,6 +38,11 @@ public sealed class ClinicInfo
     public string VkUrl { get; set; } = "";
     public RatingLink? ProDoktorov { get; set; }
     public RatingLink? YandexMaps { get; set; }
+
+    /// <summary>Палитра сайта: «#RRGGBB» или пусто — цвет из дизайна (Site/Theme.cs).</summary>
+    public string AccentColor { get; set; } = "";
+    public string BackgroundColor { get; set; } = "";
+    public string TextColor { get; set; } = "";
 }
 
 public sealed class RatingLink
@@ -62,6 +67,8 @@ public sealed class DoctorItem
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Role { get; set; } = "";
+    /// <summary>Фото из медиатеки (MediaFile.Id) или null.</summary>
+    public int? PhotoId { get; set; }
     /// <summary>Услуги, которые ведёт врач. Пусто — все.</summary>
     public List<string> ServiceIds { get; set; } = [];
 }
@@ -80,6 +87,8 @@ public sealed class ResultItem
 {
     [Display(Name = "Подпись", Description = "Процедура · число сеансов · интервал.")]
     public string Caption { get; set; } = "";
+    [Display(Name = "Фото «до и после»", Description = "Одна картинка с парой снимков. Только с письменного согласия пациента."), ClinicHub.Web.Blocks.MediaImage]
+    public int? ImageId { get; set; }
     [Display(Name = "Текст на месте фото")]
     public string ConsentNote { get; set; } = "";
 }

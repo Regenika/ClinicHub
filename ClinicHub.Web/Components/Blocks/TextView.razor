@@ -5,6 +5,10 @@
     {
         <h2 class="h2">@Settings.Title</h2>
     }
+    @if (Settings.ImageId is not null)
+    {
+        <MediaImg Id="Settings.ImageId" CssClass="text-image" />
+    }
     @foreach (var paragraph in Paragraphs)
     {
         <p>

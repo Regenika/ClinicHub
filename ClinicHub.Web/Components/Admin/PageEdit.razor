@@ -74,6 +74,12 @@
                         <div class="admin-table__actions">
                             <button class="btn btn--outline btn--sm" disabled="@(index == 0)" title="Выше" aria-label="Выше" @onclick="() => MoveAsync(b.Id, -1)">↑</button>
                             <button class="btn btn--outline btn--sm" disabled="@(index == current.DraftBlocks.Count - 1)" title="Ниже" aria-label="Ниже" @onclick="() => MoveAsync(b.Id, 1)">↓</button>
+                            <select class="select--sm" aria-label="Фон блока" title="Фон блока" value="@b.Style" @onchange="e => StyleAsync(b.Id, e.Value as string)">
+                                @foreach (var (key, title) in BlockStyles.All)
+                                {
+                                    <option value="@key">Фон: @title</option>
+                                }
+                            </select>
                             <button class="btn btn--outline btn--sm" @onclick="() => ToggleAsync(b)">@(b.IsVisible ? "Скрыть" : "Показать")</button>
                             @if (b.Error is null)
                             {
@@ -264,6 +270,7 @@
     }, "Блок сохранён в черновике.");
 
     private Task MoveAsync(int id, int direction) => RunAsync(() => Pages.MoveBlockAsync(id, direction));
+    private Task StyleAsync(int id, string? style) => RunAsync(() => Pages.SetBlockStyleAsync(id, style ?? ""), "Фон блока изменён в черновике — посмотрите предпросмотр.");
     private Task ToggleAsync(DraftBlock b) => RunAsync(() => Pages.SetBlockVisibleAsync(b.Id, !b.IsVisible));
     private Task DeleteAsync(int id) => RunAsync(() => Pages.DeleteBlockAsync(id), "Блок удалён из черновика.");
     private Task AddAsync() => RunAsync(() => Pages.AddBlockAsync(current!.DraftId!.Value, newType), $"Блок «{TypeTitle(newType)}» добавлен в конец. Нажмите «Изменить», чтобы заполнить.");

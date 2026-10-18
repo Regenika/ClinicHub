@@ -10,7 +10,14 @@
             @foreach (var r in Settings.Items)
             {
                 <figure class="result">
-                    <div class="photo-slot photo-slot--result" role="img" aria-label="Место для пары фото до и после">@r.ConsentNote</div>
+                    @if (r.ImageId is { } imageId && media.Any(m => m.Id == imageId))
+                    {
+                        <div class="photo-frame photo-slot--result"><MediaImg Id="imageId" CssClass="cover" /></div>
+                    }
+                    else
+                    {
+                        <div class="photo-slot photo-slot--result" role="img" aria-label="Место для пары фото до и после">@r.ConsentNote</div>
+                    }
                     <figcaption class="muted small">@r.Caption</figcaption>
                 </figure>
             }
@@ -23,4 +30,9 @@
     [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
 
     private string TitleId => Settings.Anchor + "-title";
+
+    [Inject] private MediaLibrary Media { get; set; } = default!;
+    private IReadOnlyList<MediaInfo> media = [];
+
+    protected override async Task OnParametersSetAsync() => media = await Media.ListAsync();
 }

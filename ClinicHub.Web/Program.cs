@@ -86,6 +86,7 @@ builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<EditorAccounts>();
 builder.Services.AddSingleton<CatalogAdmin>();
 builder.Services.AddSingleton<PageEditor>();
+builder.Services.AddSingleton<MediaLibrary>();
 
 // Кириллицу в HTML отдаём как есть, а не &#x...; — страницы короче и читаемее. Опасные символы (<, >, &, ") по-прежнему экранируются.
 builder.Services.AddWebEncoders(o => o.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));
@@ -169,6 +170,7 @@ static Task WriteWaitPage(HttpContext context, int seconds, string title, string
 
 app.MapStaticAssets();
 app.MapSeoEndpoints();
+app.MapMediaEndpoints();
 // Выход из админки: обычная форма POST с антифорджери-токеном (кнопка в шапке админки).
 // Токен проверяем явно: у эндпоинта без привязки формы метаданные антифорджери запрос сами не отклоняют.
 app.MapPost(AdminAuth.LogoutPath, async (HttpContext context, IAntiforgery antiforgery) =>

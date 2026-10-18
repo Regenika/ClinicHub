@@ -25,6 +25,7 @@ public sealed class SiteDbContext(DbContextOptions<SiteDbContext> options) : DbC
     public DbSet<CatalogPriceChange> CatalogPriceChanges => Set<CatalogPriceChange>();
 
     public DbSet<Editor> Editors => Set<Editor>();
+    public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
 
     /// <summary>Общие параметры подключения: и для сайта, и для dotnet ef.</summary>
     public static void Configure(DbContextOptionsBuilder options, string connectionString) =>
@@ -62,6 +63,7 @@ public sealed class SiteDbContext(DbContextOptions<SiteDbContext> options) : DbC
         {
             e.ToTable("Blocks");
             e.Property(x => x.Type).HasMaxLength(50);
+            e.Property(x => x.Style).HasMaxLength(20);
             // Без HasMaxLength: настройки блока могут быть длинными (списки, тексты). Это text в PostgreSQL и nvarchar(max) в SQL Server.
             e.Property(x => x.Data);
             e.HasOne(x => x.PageVersion).WithMany(x => x.Blocks).HasForeignKey(x => x.PageVersionId).OnDelete(DeleteBehavior.Cascade);
@@ -88,6 +90,22 @@ public sealed class SiteDbContext(DbContextOptions<SiteDbContext> options) : DbC
             e.Property(x => x.ProDoktorovRating).HasMaxLength(20);
             e.Property(x => x.YandexMapsUrl).HasMaxLength(500);
             e.Property(x => x.YandexMapsRating).HasMaxLength(20);
+            e.Property(x => x.AccentColor).HasMaxLength(7);
+            e.Property(x => x.BackgroundColor).HasMaxLength(7);
+            e.Property(x => x.TextColor).HasMaxLength(7);
+        });
+
+        b.Entity<MediaFile>(e =>
+        {
+            e.ToTable("MediaFiles");
+            e.Property(x => x.FileName).HasMaxLength(200);
+            e.Property(x => x.ContentType).HasMaxLength(50);
+            e.Property(x => x.Sha256).HasMaxLength(64);
+            e.Property(x => x.Alt).HasMaxLength(300);
+            e.Property(x => x.UploadedBy).HasMaxLength(50);
+            // Двоичные данные без длины: varbinary(max) в SQL Server, bytea в PostgreSQL (ADR-0009).
+            e.Property(x => x.Data);
+            e.HasIndex(x => x.Sha256);
         });
 
         b.Entity<CatalogService>(e =>
@@ -106,6 +124,7 @@ public sealed class SiteDbContext(DbContextOptions<SiteDbContext> options) : DbC
             e.Property(x => x.Key).HasMaxLength(50);
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Role).HasMaxLength(300);
+            e.HasOne<MediaFile>().WithMany().HasForeignKey(x => x.PhotoId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.Key).IsUnique();
         });
 

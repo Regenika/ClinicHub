@@ -28,6 +28,8 @@ public sealed record HeroBlock
     public string TelegramText { get; init; } = "Задать вопрос в Telegram";
     [Display(Name = "Показывать метро, часы работы и лицензию")]
     public bool ShowFacts { get; init; } = true;
+    [Display(Name = "Фото", Description = "Из медиатеки. Пока не выбрано — на сайте место для фото с подписью ниже."), MediaImage]
+    public int? PhotoId { get; init; }
     [Display(Name = "Подпись места для фото")]
     public string PhotoNote { get; init; } = "[ФОТО: кабинет или врач на приёме]";
 }
@@ -120,4 +122,6 @@ public sealed record TextBlock
     public string Title { get; init; } = "";
     [Display(Name = "Текст", Description = "Абзацы разделяйте пустой строкой."), DataType(DataType.MultilineText)]
     public string Text { get; init; } = "";
+    [Display(Name = "Картинка", Description = "Необязательно. Показывается над текстом."), MediaImage]
+    public int? ImageId { get; init; }
 }

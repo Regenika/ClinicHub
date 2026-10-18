@@ -20,7 +20,7 @@
 
     @foreach (var block in current.Blocks)
     {
-        <DynamicComponent @key="block.Id" Type="@block.Type.ComponentType" Parameters="@Parameters(block)" />
+        <BlockHost @key="block.Id" Block="block" Clinic="clinic" />
     }
 }
 
@@ -37,12 +37,6 @@
         if (current is null)
             Nav.NotFound();
     }
-
-    private Dictionary<string, object> Parameters(RenderedBlock block) => new()
-    {
-        ["Settings"] = block.Settings,
-        ["Clinic"] = clinic,
-    };
 
     /// <summary>Микроразметка schema.org для поисковиков (PLAN, задача 4.2).</summary>
     private static string JsonLd(ClinicInfo c)
