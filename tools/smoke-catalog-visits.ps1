@@ -87,7 +87,10 @@ $svc.Remove("id"); $svc.priceFrom = 4000
 $updated = Call PUT "/api/catalog/admin/services/test-botox" $svc
 Check ($updated.priceFrom -eq 4000) "цена обновилась до 4000"
 $history = Call GET "/api/catalog/admin/services/test-botox/price-history"
-Check (@($history).Count -eq 2) "в истории цен 2 записи (создание и правка): $(@($history).Count)"
+# История цен переживает удаление услуги, поэтому после прошлых прогонов там могут быть старые записи:
+# проверяем две последние (сервер отдаёт свежие сверху).
+$h = @($history)
+Check ($h.Count -ge 2 -and $h[0].oldPrice -eq 3500 -and $h[0].newPrice -eq 4000 -and $null -eq $h[1].oldPrice -and $h[1].newPrice -eq 3500) "в истории цен последние записи: создание (— -> 3500) и правка (3500 -> 4000)"
 Check ((@($pubServices) | Where-Object { $_.id -eq "test-botox" }).Count -eq 0) "скрытая услуга не видна на сайте"
 Call POST "/api/catalog/admin/services" @{ id = "Ботокс 1"; name = "плохой id"; durationMinutes = 30 } -Expect 400 -Title "неправильный id услуги -> 400" | Out-Null
 Call POST "/api/catalog/admin/services" @{ id = "test-bad-price"; name = "x"; priceFrom = -1; durationMinutes = 30 } -Expect 400 -Title "отрицательная цена -> 400" | Out-Null
