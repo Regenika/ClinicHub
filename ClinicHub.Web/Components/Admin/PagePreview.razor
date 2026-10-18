@@ -1,0 +1,38 @@
+@page "/admin/predprosmotr/{PageId:int}"
+@attribute [Authorize]
+@inject PageEditor Pages
+@inject SiteStore Store
+
+@* Предпросмотр черновика: те же компоненты блоков и тот же макет, что на сайте. Только для вошедших редакторов. *@
+
+<PageTitle>Предпросмотр: @(preview?.Title)</PageTitle>
+<HeadContent><meta name="robots" content="noindex" /></HeadContent>
+
+<div class="preview-banner" role="note">
+    Предпросмотр черновика — посетители его не видят. <a href="/admin/stranicy/@PageId">Вернуться в редактор</a>
+</div>
+
+@if (preview is null)
+{
+    <p class="container section">Страница не найдена.</p>
+}
+else
+{
+    @foreach (var block in preview.Blocks)
+    {
+        <DynamicComponent @key="block.Id" Type="@block.Type.ComponentType" Parameters="@(new Dictionary<string, object> { ["Settings"] = block.Settings, ["Clinic"] = clinic })" />
+    }
+}
+
+@code {
+    [Parameter] public int PageId { get; set; }
+
+    private PublishedPage? preview;
+    private ClinicInfo clinic = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        clinic = await Store.GetClinicAsync();
+        preview = await Pages.DraftForPreviewAsync(PageId);
+    }
+}

@@ -35,6 +35,7 @@ public static class BlockTypes
         new("reviews", "Отзывы", typeof(ReviewsBlock), typeof(ReviewsView)),
         new("channels", "Каналы", typeof(ChannelsBlock), typeof(ChannelsView)),
         new("posts", "Статьи", typeof(PostsBlock), typeof(PostsView)),
+        new("text", "Текст", typeof(TextBlock), typeof(TextView)),
     }.ToDictionary(t => t.Key);
 
     public static string KeyOf(Type settingsType) => All.Values.Single(t => t.SettingsType == settingsType).Key;

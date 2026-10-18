@@ -1,0 +1,293 @@
+@page "/admin/stranicy/{PageId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Web.Data
+@inject PageEditor Pages
+
+<PageTitle>@(current?.Title ?? "Страница") — админка</PageTitle>
+
+@if (current is null)
+{
+    <p class="notice">Страница не найдена. <a href="/admin/stranicy">К списку страниц</a></p>
+    return;
+}
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <div class="stack-sm">
+            <a class="muted small" href="/admin/stranicy">← Все страницы</a>
+            <h1 class="h2">@current.Title</h1>
+            <span class="muted">
+                <a href="@current.Path" target="_blank" rel="noopener">@current.Path</a> ·
+                @(current.IsPublished ? "на сайте" : "не на сайте")
+            </span>
+        </div>
+        <div class="row-wrap">
+            @if (current.DraftId is not null)
+            {
+                <a class="btn btn--outline" href="/admin/predprosmotr/@current.Id" target="_blank" rel="noopener">Предпросмотр</a>
+                <button class="btn btn--primary" disabled="@busy" @onclick="PublishAsync">Опубликовать</button>
+            }
+            else
+            {
+                <button class="btn btn--primary" disabled="@busy" @onclick="StartDraftAsync">Начать правку</button>
+            }
+        </div>
+    </div>
+
+    @if (message is not null)
+    {
+        <p class="notice" role="status">@message</p>
+    }
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+
+    @if (current.DraftId is null)
+    {
+        <p class="muted">Черновика нет — на сайте показывается опубликованная версия. Нажмите «Начать правку», чтобы изменить блоки: посетители увидят изменения только после публикации.</p>
+    }
+    else
+    {
+        <h2 class="h3">Блоки черновика</h2>
+        @if (current.DraftBlocks.Count == 0)
+        {
+            <p class="muted">Блоков пока нет. Добавьте первый ниже.</p>
+        }
+        <ol class="page-blocks">
+            @for (var i = 0; i < current.DraftBlocks.Count; i++)
+            {
+                var b = current.DraftBlocks[i];
+                var index = i;
+                <li class="card page-block @(b.IsVisible ? null : "page-block--hidden")">
+                    <div class="page-block__head">
+                        <div>
+                            <strong>@TypeTitle(b.Type)</strong>
+                            <span class="muted small">@Summary(b.Settings)</span>
+                            @if (!b.IsVisible)
+                            {
+                                <span class="muted small">· скрыт</span>
+                            }
+                        </div>
+                        <div class="admin-table__actions">
+                            <button class="btn btn--outline btn--sm" disabled="@(index == 0)" title="Выше" aria-label="Выше" @onclick="() => MoveAsync(b.Id, -1)">↑</button>
+                            <button class="btn btn--outline btn--sm" disabled="@(index == current.DraftBlocks.Count - 1)" title="Ниже" aria-label="Ниже" @onclick="() => MoveAsync(b.Id, 1)">↓</button>
+                            <button class="btn btn--outline btn--sm" @onclick="() => ToggleAsync(b)">@(b.IsVisible ? "Скрыть" : "Показать")</button>
+                            @if (b.Error is null)
+                            {
+                                <button class="btn btn--outline btn--sm" @onclick="() => Edit(b)">Изменить</button>
+                            }
+                            @if (confirmDelete == b.Id)
+                            {
+                                <button class="btn btn--danger btn--sm" @onclick="() => DeleteAsync(b.Id)">Точно удалить?</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn--outline btn--sm" @onclick="() => confirmDelete = b.Id">Удалить</button>
+                            }
+                        </div>
+                    </div>
+                    @if (b.Error is not null)
+                    {
+                        <p class="form-errors">@b.Error</p>
+                    }
+                    @if (editingId == b.Id && editing is not null)
+                    {
+                        <div class="stack page-block__form">
+                            <BlockFields Model="editing" Prefix="@($"b{b.Id}-")" />
+                            <div class="row-wrap">
+                                <button class="btn btn--primary" disabled="@busy" @onclick="SaveBlockAsync">Сохранить блок</button>
+                                <button class="btn btn--outline" @onclick="() => { editingId = null; editing = null; }">Отмена</button>
+                            </div>
+                        </div>
+                    }
+                </li>
+            }
+        </ol>
+
+        <div class="row-wrap">
+            <select @bind="newType" aria-label="Тип блока">
+                @foreach (var t in BlockTypes.All.Values)
+                {
+                    <option value="@t.Key">@t.Title</option>
+                }
+            </select>
+            <button class="btn btn--outline" @onclick="AddAsync">+ Добавить блок</button>
+        </div>
+
+        <div class="row-wrap">
+            @if (confirmDiscard)
+            {
+                <button class="btn btn--danger btn--sm" @onclick="DiscardAsync">Точно удалить черновик? Все неопубликованные правки пропадут</button>
+                <button class="btn btn--outline btn--sm" @onclick="() => confirmDiscard = false">Нет</button>
+            }
+            else
+            {
+                <button class="btn btn--outline btn--sm" @onclick="() => confirmDiscard = true">Удалить черновик</button>
+            }
+        </div>
+    }
+
+    <h2 class="h3">Свойства страницы</h2>
+    <div class="stack setup__form admin-form">
+        <div class="field">
+            <label for="seo-title">Заголовок (вкладка браузера и поисковики)</label>
+            <input id="seo-title" type="text" @bind="seoTitle" />
+        </div>
+        <div class="field">
+            <label for="seo-desc">Описание для поисковиков</label>
+            <textarea id="seo-desc" rows="2" @bind="seoDescription"></textarea>
+        </div>
+        <p class="muted small">Заголовок и описание меняются на сайте сразу, без публикации.</p>
+        <div class="row-wrap">
+            <button class="btn btn--outline" @onclick="SaveSeoAsync">Сохранить свойства</button>
+            @if (current.Path != "/")
+            {
+                <button class="btn btn--outline" @onclick="TogglePublishedAsync">@(current.IsPublished ? "Снять с сайта" : "Вернуть на сайт")</button>
+            }
+        </div>
+    </div>
+
+    <h2 class="h3">История версий</h2>
+    @if (current.Versions.Count == 0)
+    {
+        <p class="muted">Страница ещё не публиковалась.</p>
+    }
+    else
+    {
+        <div class="admin-table-wrap">
+            <table class="admin-table">
+                <thead><tr><th>Опубликована (МСК)</th><th>Кто</th><th>Блоков</th><th>Состояние</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var v in current.Versions)
+                    {
+                        <tr>
+                            <td class="tabular">@(v.PublishedAt is { } t ? ClinicTime.ToLocal(new DateTimeOffset(t, TimeSpan.Zero)).ToString("dd.MM.yyyy HH:mm") : "—")</td>
+                            <td>@v.PublishedBy</td>
+                            <td>@v.BlockCount</td>
+                            <td>@(v.Status == PageVersionStatus.Published ? "на сайте" : "архив")</td>
+                            <td class="admin-table__actions">
+                                @if (confirmRestore == v.Id)
+                                {
+                                    <button class="btn btn--danger btn--sm" @onclick="() => RestoreAsync(v.Id)">Заменить черновик этой версией?</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn--outline btn--sm" @onclick="() => confirmRestore = v.Id">Вернуть в черновик</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="muted small">«Вернуть в черновик» кладёт старую версию в черновик. На сайт она попадёт после «Опубликовать» — сначала можно посмотреть предпросмотр.</p>
+    }
+</section>
+
+@code {
+    [Parameter] public int PageId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> Auth { get; set; } = default!;
+
+    private PageForEdit? current;
+    private int? editingId;
+    private object? editing;
+    private string newType = "text";
+    private string seoTitle = "";
+    private string seoDescription = "";
+    private int? confirmDelete;
+    private int? confirmRestore;
+    private bool confirmDiscard;
+    private bool busy;
+    private string? message;
+    private string? error;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        current = await Pages.GetAsync(PageId);
+        if (current is not null)
+        {
+            seoTitle = current.Title;
+            seoDescription = current.Description;
+        }
+        confirmDelete = confirmRestore = null;
+        confirmDiscard = false;
+    }
+
+    private static string TypeTitle(string type) => BlockTypes.All.TryGetValue(type, out var t) ? t.Title : type;
+
+    /// <summary>Заголовок блока рядом с типом, чтобы два одинаковых блока можно было различить.</summary>
+    private static string Summary(object settings) =>
+        settings.GetType().GetProperty("Title")?.GetValue(settings) is string { Length: > 0 } title ? "— " + title : "";
+
+    /// <summary>Действие с перехватом ошибок: черновик могли опубликовать в соседней вкладке.</summary>
+    private async Task RunAsync(Func<Task> action, string? done = null)
+    {
+        busy = true;
+        message = error = null;
+        try
+        {
+            await action();
+            message = done;
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+        await LoadAsync();
+    }
+
+    private Task StartDraftAsync() => RunAsync(() => Pages.EnsureDraftAsync(PageId), "Черновик создан из текущей версии. Правьте блоки, затем — «Опубликовать».");
+
+    private void Edit(DraftBlock b)
+    {
+        // Правим копию: «Отмена» не должна оставлять изменения в памяти.
+        var type = BlockTypes.All[b.Type];
+        editing = type.Deserialize(BlockTypes.Serialize(b.Settings));
+        editingId = b.Id;
+        confirmDelete = null;
+    }
+
+    private Task SaveBlockAsync() => RunAsync(async () =>
+    {
+        await Pages.SaveBlockAsync(editingId!.Value, editing!);
+        editingId = null;
+        editing = null;
+    }, "Блок сохранён в черновике.");
+
+    private Task MoveAsync(int id, int direction) => RunAsync(() => Pages.MoveBlockAsync(id, direction));
+    private Task ToggleAsync(DraftBlock b) => RunAsync(() => Pages.SetBlockVisibleAsync(b.Id, !b.IsVisible));
+    private Task DeleteAsync(int id) => RunAsync(() => Pages.DeleteBlockAsync(id), "Блок удалён из черновика.");
+    private Task AddAsync() => RunAsync(() => Pages.AddBlockAsync(current!.DraftId!.Value, newType), $"Блок «{TypeTitle(newType)}» добавлен в конец. Нажмите «Изменить», чтобы заполнить.");
+    private Task DiscardAsync() => RunAsync(() => Pages.DiscardDraftAsync(PageId), "Черновик удалён. На сайте — прежняя опубликованная версия.");
+    private Task RestoreAsync(int versionId) => RunAsync(() => Pages.RestoreToDraftAsync(PageId, versionId), "Версия возвращена в черновик. Проверьте предпросмотр и опубликуйте.");
+
+    private Task SaveSeoAsync() => RunAsync(() =>
+    {
+        if (string.IsNullOrWhiteSpace(seoTitle))
+            throw new InvalidOperationException("Заголовок не может быть пустым.");
+        return Pages.SaveSeoAsync(PageId, seoTitle, seoDescription);
+    }, "Свойства сохранены.");
+
+    private Task PublishAsync() => RunAsync(async () =>
+    {
+        var editor = AdminAuth.LoginOf((await Auth).User);
+        if (await Pages.PublishAsync(PageId, editor) is { } e)
+            throw new InvalidOperationException(e);
+    }, "Опубликовано. На этом компьютере уже видно, на других — в течение 30 секунд.");
+
+    private Task TogglePublishedAsync() => RunAsync(async () =>
+    {
+        var editor = AdminAuth.LoginOf((await Auth).User);
+        if (await Pages.SetPublishedAsync(PageId, !current!.IsPublished, editor) is { } e)
+            throw new InvalidOperationException(e);
+    }, current!.IsPublished ? "Страница снята с сайта." : "Страница снова на сайте.");
+}

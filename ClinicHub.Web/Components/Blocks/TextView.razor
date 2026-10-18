@@ -1,0 +1,31 @@
+@* Блок «Текст»: заголовок и абзацы. HTML не принимается: абзацы разделяются пустой строкой, строки внутри абзаца — переносом. *@
+
+<section id="@(string.IsNullOrEmpty(Settings.Anchor) ? null : Settings.Anchor)" class="container section prose stack">
+    @if (!string.IsNullOrEmpty(Settings.Title))
+    {
+        <h2 class="h2">@Settings.Title</h2>
+    }
+    @foreach (var paragraph in Paragraphs)
+    {
+        <p>
+            @for (var i = 0; i < paragraph.Length; i++)
+            {
+                @if (i > 0)
+                {
+                    <br />
+                }
+                @paragraph[i]
+            }
+        </p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TextBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private IEnumerable<string[]> Paragraphs => Settings.Text
+        .Replace("\r\n", "\n")
+        .Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(p => p.Split('\n', StringSplitOptions.TrimEntries));
+}

@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ClinicHub.Web.Site;
 
 /// <summary>
@@ -66,19 +68,26 @@ public sealed class DoctorItem
 
 public sealed class PostItem
 {
+    [Display(Name = "Рубрика")]
     public string Tag { get; set; } = "";
+    [Display(Name = "Заголовок")]
     public string Title { get; set; } = "";
+    [Display(Name = "Ссылка", Description = "Пусто — заголовок без ссылки.")]
     public string Url { get; set; } = "";
 }
 
 public sealed class ResultItem
 {
+    [Display(Name = "Подпись", Description = "Процедура · число сеансов · интервал.")]
     public string Caption { get; set; } = "";
+    [Display(Name = "Текст на месте фото")]
     public string ConsentNote { get; set; } = "";
 }
 
 public sealed class ReviewQuote
 {
+    [Display(Name = "Текст отзыва"), DataType(DataType.MultilineText)]
     public string Text { get; set; } = "";
+    [Display(Name = "Подпись", Description = "Имя, дата, площадка.")]
     public string Signature { get; set; } = "";
 }
