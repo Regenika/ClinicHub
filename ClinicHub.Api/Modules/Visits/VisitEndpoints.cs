@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
 using ClinicHub.Api.Modules.Catalog;
@@ -135,11 +136,29 @@ public static class VisitEndpoints
         return Results.Ok(ToDto(visit));
     }
 
-    private static Task<IResult> NoShow(int id, VisitNoteDto? dto, ClinicHubDbContext db, HttpContext http, CancellationToken ct) =>
-        CloseAsync(id, VisitStatus.NoShow, dto?.Comment, db, http, ct);
+    private static async Task<IResult> NoShow(int id, ClinicHubDbContext db, HttpContext http, CancellationToken ct) =>
+        await CloseAsync(id, VisitStatus.NoShow, await ReadOptionalCommentAsync(http.Request, ct), db, http, ct);
 
-    private static Task<IResult> Cancel(int id, VisitNoteDto? dto, ClinicHubDbContext db, HttpContext http, CancellationToken ct) =>
-        CloseAsync(id, VisitStatus.Cancelled, dto?.Comment, db, http, ct);
+    private static async Task<IResult> Cancel(int id, ClinicHubDbContext db, HttpContext http, CancellationToken ct) =>
+        await CloseAsync(id, VisitStatus.Cancelled, await ReadOptionalCommentAsync(http.Request, ct), db, http, ct);
+
+    /// <summary>
+    /// Комментарий к неявке или отмене необязателен, поэтому тело читаем сами: если параметр-тело объявить
+    /// в обработчике, ASP.NET отвечает 415 на запрос без Content-Type (кнопка «Неявка» без комментария).
+    /// </summary>
+    private static async Task<string?> ReadOptionalCommentAsync(HttpRequest request, CancellationToken ct)
+    {
+        if (!request.HasJsonContentType())
+            return null;
+        try
+        {
+            return (await request.ReadFromJsonAsync<VisitNoteDto>(ct))?.Comment;
+        }
+        catch (JsonException)
+        {
+            return null; // пустое или кривое тело — считаем, что комментария нет
+        }
+    }
 
     /// <summary>Неявка и отмена — только из Planned. Состоявшийся визит так не «отменить»: это исказило бы историю.</summary>
     private static async Task<IResult> CloseAsync(
