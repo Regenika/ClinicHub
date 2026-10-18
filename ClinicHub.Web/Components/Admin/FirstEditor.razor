@@ -1,0 +1,91 @@
+@page "/admin/pervyi-redaktor"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authentication
+@inject EditorAccounts Accounts
+@inject NavigationManager Nav
+
+@* Первый редактор. Только пока редакторов нет и только с компьютера, где стоит сайт (как настройка базы). *@
+
+<PageTitle>Первый редактор — админка ClinicHub</PageTitle>
+<HeadContent><meta name="robots" content="noindex" /></HeadContent>
+
+<section class="admin-narrow stack">
+    <h1 class="h2">Первый редактор сайта</h1>
+
+    @if (!isLocal)
+    {
+        <p class="notice" role="note">Первого редактора можно создать только на компьютере, где установлен сайт.</p>
+    }
+    else
+    {
+        <p class="muted-strong">
+            Редакторов ещё нет. Создайте учётную запись: под ней вы войдёте в админку и сможете добавить остальных.
+        </p>
+        <EditForm Model="Form" FormName="first-editor" OnSubmit="CreateAsync" class="stack setup__form" novalidate>
+            @if (error is not null)
+            {
+                <div class="form-errors" role="alert">@error</div>
+            }
+            <div class="field">
+                <label for="f-login">Логин</label>
+                <InputText id="f-login" autocomplete="username" spellcheck="false" @bind-Value="Form!.Login" />
+            </div>
+            <div class="field">
+                <label for="f-name">Имя (видно в истории изменений)</label>
+                <InputText id="f-name" autocomplete="name" @bind-Value="Form.DisplayName" />
+            </div>
+            <div class="field">
+                <label for="f-password">Пароль, не короче @AdminAuth.MinPasswordLength символов</label>
+                <InputText id="f-password" type="password" autocomplete="new-password" @bind-Value="Form.Password" />
+            </div>
+            <div class="field">
+                <label for="f-repeat">Пароль ещё раз</label>
+                <InputText id="f-repeat" type="password" autocomplete="new-password" @bind-Value="Form.Repeat" />
+            </div>
+            <button class="btn btn--primary btn--lg" type="submit">Создать и войти</button>
+        </EditForm>
+    }
+</section>
+
+@code {
+    public sealed class FirstEditorForm
+    {
+        public string? Login { get; set; }
+        public string? DisplayName { get; set; }
+        public string? Password { get; set; }
+        public string? Repeat { get; set; }
+    }
+
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+    [SupplyParameterFromForm(FormName = "first-editor")] private FirstEditorForm? Form { get; set; }
+
+    private bool isLocal;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Form ??= new FirstEditorForm();
+        isLocal = HttpContext?.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip);
+        if (await Accounts.AnyAsync())
+            Nav.NavigateTo(AdminAuth.LoginPath);
+    }
+
+    private async Task CreateAsync()
+    {
+        if (!isLocal)
+            return;
+        error = EditorAccounts.Validate(Form!.Login, Form.DisplayName, Form.Password, Form.Repeat);
+        if (error is null)
+        {
+            var (editor, createError) = await Accounts.CreateAsync(Form.Login!, Form.DisplayName!, Form.Password!, onlyIfNone: true, createdBy: "первый запуск");
+            error = createError;
+            if (editor is not null)
+            {
+                await HttpContext!.SignInAsync(AdminAuth.Scheme, AdminAuth.Principal(editor));
+                Nav.NavigateTo("/admin");
+                return;
+            }
+        }
+        Form.Password = Form.Repeat = null;
+    }
+}

@@ -1,0 +1,198 @@
+@page "/admin/uslugi"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@inject CatalogAdmin Catalog
+
+<PageTitle>Услуги и цены — админка</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Услуги и цены</h1>
+        @if (form is null)
+        {
+            <button class="btn btn--primary" @onclick="New">Добавить услугу</button>
+        }
+    </div>
+    <p class="muted">
+        Цена правится здесь и меняется на всех страницах сайта и в записи. Порядок в списке — порядок на сайте.
+        Скрытая услуга не видна на сайте и в записи, но остаётся в истории.
+    </p>
+
+    @if (form is not null)
+    {
+        <EditForm Model="form" OnValidSubmit="SaveAsync" class="stack setup__form admin-form">
+            <h2 class="h3">@(form.Id == 0 ? "Новая услуга" : "Изменить услугу")</h2>
+            <DataAnnotationsValidator />
+            <ValidationSummary class="form-errors" />
+            @if (error is not null)
+            {
+                <div class="form-errors" role="alert">@error</div>
+            }
+            <div class="field">
+                <label for="s-name">Название</label>
+                <InputText id="s-name" @bind-Value="form.Name" />
+            </div>
+            <div class="field">
+                <label for="s-key">Ключ (латиницей, для адреса записи)</label>
+                <InputText id="s-key" disabled="@(form.Id != 0)" spellcheck="false" @bind-Value="form.Key" placeholder="laser-epilation" />
+                @if (form.Id != 0)
+                {
+                    <span class="muted small">Ключ не меняется: на него ссылаются страницы и адреса записи.</span>
+                }
+            </div>
+            <div class="field">
+                <label for="s-text">Описание для сайта</label>
+                <InputTextArea id="s-text" rows="3" @bind-Value="form.Text" />
+            </div>
+            <div class="admin-form__row">
+                <div class="field">
+                    <label for="s-price">Цена (как на сайте)</label>
+                    <InputText id="s-price" @bind-Value="form.Price" placeholder="от 3 000 ₽" />
+                </div>
+                <div class="field">
+                    <label for="s-duration">Длительность, минут</label>
+                    <InputNumber id="s-duration" @bind-Value="form.DurationMinutes" />
+                </div>
+            </div>
+            <label class="check">
+                <InputCheckbox @bind-Value="form.IsVisible" />
+                <span>Показывать на сайте и в записи</span>
+            </label>
+            <div class="row-wrap">
+                <button class="btn btn--primary" type="submit" disabled="@busy">Сохранить</button>
+                <button class="btn btn--outline" type="button" @onclick="Cancel">Отмена</button>
+            </div>
+        </EditForm>
+    }
+
+    @if (saved is not null)
+    {
+        <p class="notice" role="status">@saved</p>
+    }
+
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead>
+                <tr><th>Услуга</th><th>Цена</th><th>Минут</th><th>На сайте</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var s in rows)
+                {
+                    <tr class="@(s.IsVisible ? null : "admin-table__muted")">
+                        <td>@s.Name <span class="muted small">@s.Key</span></td>
+                        <td>@s.Price</td>
+                        <td>@s.DurationMinutes</td>
+                        <td>@(s.IsVisible ? "да" : "скрыта")</td>
+                        <td class="admin-table__actions">
+                            <button class="btn btn--outline btn--sm" title="Выше" aria-label="Выше" @onclick="() => MoveAsync(s.Id, -1)">↑</button>
+                            <button class="btn btn--outline btn--sm" title="Ниже" aria-label="Ниже" @onclick="() => MoveAsync(s.Id, 1)">↓</button>
+                            <button class="btn btn--outline btn--sm" @onclick="() => EditAsync(s.Id)">Изменить</button>
+                            @if (confirmDelete == s.Id)
+                            {
+                                <button class="btn btn--danger btn--sm" @onclick="() => DeleteAsync(s.Id)">Точно удалить?</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn--outline btn--sm" @onclick="() => confirmDelete = s.Id">Удалить</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="muted small">Удалить можно, только если услугу больше нигде не нужно показывать. Чтобы временно убрать её с сайта — снимите «Показывать».</p>
+
+    <h2 class="h3">История цен</h2>
+    @if (history.Count == 0)
+    {
+        <p class="muted">Цены ещё не менялись.</p>
+    }
+    else
+    {
+        <div class="admin-table-wrap">
+            <table class="admin-table">
+                <thead><tr><th>Когда (МСК)</th><th>Услуга</th><th>Было</th><th>Стало</th><th>Кто</th></tr></thead>
+                <tbody>
+                    @foreach (var h in history)
+                    {
+                        <tr>
+                            <td class="tabular">@ClinicTime.ToLocal(new DateTimeOffset(h.ChangedAt, TimeSpan.Zero)).ToString("dd.MM.yyyy HH:mm")</td>
+                            <td>@h.Service</td>
+                            <td>@h.OldPrice</td>
+                            <td>@h.NewPrice</td>
+                            <td>@h.ChangedBy</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> Auth { get; set; } = default!;
+
+    private List<ServiceRow> rows = [];
+    private List<PriceChangeRow> history = [];
+    private ServiceForm? form;
+    private string? error;
+    private string? saved;
+    private int? confirmDelete;
+    private bool busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        rows = await Catalog.ServicesAsync();
+        history = await Catalog.PriceHistoryAsync();
+    }
+
+    private void New()
+    {
+        form = new ServiceForm();
+        error = saved = null;
+    }
+
+    private async Task EditAsync(int id)
+    {
+        form = await Catalog.ServiceAsync(id);
+        error = saved = null;
+        confirmDelete = null;
+    }
+
+    private void Cancel()
+    {
+        form = null;
+        error = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        busy = true;
+        var editor = AdminAuth.LoginOf((await Auth).User);
+        error = await Catalog.SaveServiceAsync(form!, editor);
+        busy = false;
+        if (error is not null)
+            return;
+        saved = $"Сохранено: «{form!.Name}».";
+        form = null;
+        await LoadAsync();
+    }
+
+    private async Task MoveAsync(int id, int direction)
+    {
+        await Catalog.MoveServiceAsync(id, direction);
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await Catalog.DeleteServiceAsync(id);
+        confirmDelete = null;
+        saved = "Услуга удалена.";
+        await LoadAsync();
+    }
+}

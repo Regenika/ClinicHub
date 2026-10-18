@@ -86,6 +86,9 @@ dotnet run --launch-profile http
 - Услуги с ценами и врачи — **временно** в `site.CatalogServices`, `site.CatalogDoctors`, `site.CatalogDoctorServices`
   (у врача без строк в `CatalogDoctorServices` — все услуги). Сайт перечитывает каталог раз в 30 секунд. По ADR-0008 каталог
   переедет в `ClinicHub.Api` (Issue #13), тогда эти таблицы уйдут. Значения в `[КВАДРАТНЫХ СКОБКАХ]` — заглушки.
+- **Веб-админка** — `/admin` (только из локальной сети). Первого редактора создают на `/admin/pervyi-redaktor` с компьютера,
+  где стоит сайт; остальных — в разделе «Редакторы». Есть услуги и цены (с историей цен), врачи, настройки сайта.
+  Редактор страниц из блоков — PLAN 4.8. Формы админки интерактивные (Blazor Server), публичные страницы — без JavaScript.
 - Новая миграция схемы сайта: `dotnet ef migrations add <Имя> --project ClinicHub.Web --output-dir Data/Migrations`.
 - Источник свободного времени — интерфейс `IBookingSource`. Сейчас `DemoBookingSource`, после выбора МИС будет её адаптер.
 - Публичные страницы работают без JavaScript (static SSR), поэтому их нормально индексируют поисковики.

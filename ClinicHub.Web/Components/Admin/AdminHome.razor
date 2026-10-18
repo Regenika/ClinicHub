@@ -1,0 +1,58 @@
+@page "/admin"
+@attribute [Authorize]
+@layout AdminLayout
+@using ClinicHub.Web.Data
+@inject DbConnectionStore Db
+@inject CatalogAdmin Catalog
+
+<PageTitle>Админка ClinicHub</PageTitle>
+
+<section class="stack-lg">
+    <h1 class="h2">Админка сайта</h1>
+
+    <div class="admin-cards">
+        <a class="card admin-card" href="/admin/uslugi">
+            <h2 class="h3">Услуги и цены</h2>
+            <p class="muted">@services услуг. Цена правится здесь и меняется на всём сайте и в записи.</p>
+        </a>
+        <a class="card admin-card" href="/admin/vrachi">
+            <h2 class="h3">Врачи</h2>
+            <p class="muted">@doctors врачей и услуги, которые они ведут.</p>
+        </a>
+        <a class="card admin-card" href="/admin/nastroiki">
+            <h2 class="h3">Настройки сайта</h2>
+            <p class="muted">Телефон, адрес, часы работы, лицензия, ссылки на мессенджеры и отзывы.</p>
+        </a>
+        <a class="card admin-card" href="/admin/stranicy">
+            <h2 class="h3">Страницы</h2>
+            <p class="muted">Редактор страниц из блоков — следующий этап.</p>
+        </a>
+    </div>
+
+    <p class="muted small">
+        База данных: @Server. Изменения видны на этом компьютере сразу, на других компьютерах с той же базой — в течение 30 секунд.
+        Подключение меняется на <a href="@DbConnectionStore.SetupPath">странице настройки базы</a> (только на компьютере, где стоит сайт).
+    </p>
+</section>
+
+@code {
+    private int services;
+    private int doctors;
+
+    private string Server
+    {
+        get
+        {
+            if (Db.ConnectionString is not { } cs)
+                return "не подключена";
+            var b = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(cs);
+            return $"{b.DataSource}, база {b.InitialCatalog}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        services = (await Catalog.ServicesAsync()).Count;
+        doctors = (await Catalog.DoctorsAsync()).Count;
+    }
+}

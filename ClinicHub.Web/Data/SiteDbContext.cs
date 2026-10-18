@@ -22,6 +22,9 @@ public sealed class SiteDbContext(DbContextOptions<SiteDbContext> options) : DbC
     public DbSet<CatalogService> CatalogServices => Set<CatalogService>();
     public DbSet<CatalogDoctor> CatalogDoctors => Set<CatalogDoctor>();
     public DbSet<CatalogDoctorService> CatalogDoctorServices => Set<CatalogDoctorService>();
+    public DbSet<CatalogPriceChange> CatalogPriceChanges => Set<CatalogPriceChange>();
+
+    public DbSet<Editor> Editors => Set<Editor>();
 
     /// <summary>Общие параметры подключения: и для сайта, и для dotnet ef.</summary>
     public static void Configure(DbContextOptionsBuilder options, string connectionString) =>
@@ -112,6 +115,25 @@ public sealed class SiteDbContext(DbContextOptions<SiteDbContext> options) : DbC
             e.HasKey(x => new { x.DoctorId, x.ServiceId });
             e.HasOne(x => x.Doctor).WithMany(x => x.Services).HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Service).WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<CatalogPriceChange>(e =>
+        {
+            e.ToTable("CatalogPriceChanges");
+            e.Property(x => x.OldPrice).HasMaxLength(100);
+            e.Property(x => x.NewPrice).HasMaxLength(100);
+            e.Property(x => x.ChangedBy).HasMaxLength(50);
+            e.HasOne(x => x.Service).WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ServiceId, x.ChangedAt });
+        });
+
+        b.Entity<Editor>(e =>
+        {
+            e.ToTable("Editors");
+            e.Property(x => x.Login).HasMaxLength(50);
+            e.Property(x => x.DisplayName).HasMaxLength(100);
+            e.Property(x => x.PasswordHash).HasMaxLength(500);
+            e.HasIndex(x => x.Login).IsUnique();
         });
     }
 }
