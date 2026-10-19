@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClinicHub.Api.Migrations
 {
     [DbContext(typeof(ClinicHubDbContext))]
-    [Migration("20261018143836_CatalogAndVisits")]
+    [Migration("20261019122437_CatalogAndVisits")]
     partial class CatalogAndVisits
     {
         /// <inheritdoc />
@@ -110,11 +110,28 @@ namespace ClinicHub.Api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<decimal?>("NewPrice")
+                    b.Property<string>("NewDisplay")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<decimal?>("NewPriceFrom")
                         .HasPrecision(10, 2)
                         .HasColumnType("decimal(10,2)");
 
-                    b.Property<decimal?>("OldPrice")
+                    b.Property<decimal?>("NewPriceTo")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("OldDisplay")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<decimal?>("OldPriceFrom")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("OldPriceTo")
                         .HasPrecision(10, 2)
                         .HasColumnType("decimal(10,2)");
 
@@ -162,9 +179,22 @@ namespace ClinicHub.Api.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("PriceDisplay")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
                     b.Property<decimal?>("PriceFrom")
                         .HasPrecision(10, 2)
                         .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("PriceTo")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("PriceUnit")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
