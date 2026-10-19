@@ -170,8 +170,10 @@ public static class ScenarioEndpoints
         }
         else if (dto.InDays is int days and >= 0 and <= 3650)
         {
-            if (ParseTime(dto.Time ?? "11:00") is not { } time)
-                return Results.BadRequest("Время — «ЧЧ:ММ» с 09:00 до 20:59.");
+            var window = await SendWindow.LoadAsync(db, ct);
+            if (CheckTime(dto.Time ?? "11:00", window, "Время напоминания") is { } timeError)
+                return Results.BadRequest(timeError);
+            var time = ParseTime(dto.Time ?? "11:00")!.Value;
             due = MoscowTime.ToUtc(MoscowTime.Date(now).AddDays(days), time);
         }
         else
@@ -257,13 +259,15 @@ public static class ScenarioEndpoints
                 return "Нет таких услуг в каталоге: " + string.Join(", ", unknown);
         }
 
+        var window = await SendWindow.LoadAsync(db, ct);
         var parsed = new List<(ScenarioStepDto Dto, TimeOnly Time)>();
         foreach (var st in steps)
         {
             if (st.OffsetDays is < 0 or > 3650)
                 return "Смещение шага — от 0 до 3650 дней.";
-            if (ParseTime(st.SendTime) is not { } time)
-                return $"Время шага «{st.SendTime}»: нужно «ЧЧ:ММ» с 09:00 до 20:59 (окно тишины 21:00–9:00).";
+            if (CheckTime(st.SendTime, window, "Время шага") is { } timeError)
+                return timeError;
+            var time = ParseTime(st.SendTime)!.Value;
             if (ValidateText(st.Text) is { } textError)
                 return textError;
             if (st.Id is int sid && s.Steps.All(x => x.Id != sid))
@@ -307,12 +311,23 @@ public static class ScenarioEndpoints
         : text.Length > 1000 ? "Текст длиннее 1000 символов."
         : null;
 
-    /// <summary>«ЧЧ:ММ» в пределах дневного окна 09:00–20:59 по Москве.</summary>
+    /// <summary>«ЧЧ:ММ» по Москве.</summary>
     private static TimeOnly? ParseTime(string? s) =>
         TimeOnly.TryParseExact(s?.Trim(), ["HH:mm", "H:mm"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var t)
-        && t.ToTimeSpan() >= ReminderDispatcher.QuietTo && t.ToTimeSpan() < ReminderDispatcher.QuietFrom
             ? t
             : null;
+
+    /// <summary>
+    /// Ошибка для администратора или null. Время вне окна отправки не переносим молча, а отвечаем 400:
+    /// сразу видно, почему напоминание не уйдёт в назначенный час.
+    /// </summary>
+    private static string? CheckTime(string? s, SendWindow window, string what) =>
+        ParseTime(s) is not { } t
+            ? $"{what} «{s}»: нужно «ЧЧ:ММ», например 11:00."
+            : window.Allows(t)
+                ? null
+                : $"{what} {t:HH\:mm} вне окна отправки {window} (настройки отправки). " +
+                  $"Выберите время с {window.From:hh\:mm} до {window.To.Add(TimeSpan.FromMinutes(-1)):hh\:mm}.";
 
     private static ScenarioDto ToDto(CareScenario s) => new(
         s.Id, s.Name, s.IsActive, s.Purpose, s.Trigger, s.NoVisitDays,

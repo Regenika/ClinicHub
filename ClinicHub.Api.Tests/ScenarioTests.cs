@@ -176,9 +176,10 @@ public sealed class ScenarioTests : IDisposable
     }
 
     [Fact]
-    public async Task В_окно_тишины_ничего_не_уходит_а_утром_уходит()
+    public async Task Вне_окна_отправки_ничего_не_уходит_а_утром_уходит()
     {
-        _clock.SetMoscow(2026, 10, 20, 22, 30);
+        // Активной RateConfig нет — окно по умолчанию 9:00–20:00, как у планировщика SMS.
+        _clock.SetMoscow(2026, 10, 20, 20, 30);
         var r = AddDue();
 
         Assert.Equal(0, await _dispatcher.RunAsync(default));
@@ -190,6 +191,29 @@ public sealed class ScenarioTests : IDisposable
         _clock.SetMoscow(2026, 10, 21, 9, 0);
         Assert.Equal(1, await _dispatcher.RunAsync(default));
         Assert.Equal(ReminderStatus.Sent, _db.PlannedReminders.AsNoTracking().Single(x => x.Id == r.Id).Status);
+    }
+
+    [Fact]
+    public async Task Окно_отправки_берётся_из_настроек_отправки()
+    {
+        _db.RateConfigs.Add(new RateConfig
+        {
+            Name = "Клиника", IsActive = true, SendWindowFrom = new TimeSpan(10, 0, 0), SendWindowTo = new TimeSpan(18, 0, 0),
+        });
+        _db.SaveChanges();
+
+        _clock.SetMoscow(2026, 10, 21, 9, 30);
+        AddDue();
+        Assert.Equal(0, await _dispatcher.RunAsync(default));
+
+        _clock.SetMoscow(2026, 10, 21, 10, 0);
+        Assert.Equal(1, await _dispatcher.RunAsync(default));
+
+        var window = await SendWindow.LoadAsync(_db, default);
+        Assert.Equal("10:00–18:00", window.ToString());
+        Assert.True(window.Allows(new TimeOnly(17, 59)));
+        Assert.False(window.Allows(new TimeOnly(18, 0)));
+        Assert.False(window.Allows(new TimeOnly(9, 59)));
     }
 
     [Fact]
