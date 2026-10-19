@@ -4,7 +4,7 @@
 
 | Проект | Что это |
 |---|---|
-| `ClinicHub.Api` | Сервер (ASP.NET Core + SQL Server LocalDB). Хранит пациентов и заявки, раздаёт SMS телефонам. |
+| `ClinicHub.Api` | Сервер (ASP.NET Core + SQL Server; перед продом — PostgreSQL, ADR-0009). Хранит пациентов и заявки, раздаёт SMS телефонам. |
 | `ClinicHub.Admin` | Программа администратора для Windows (заявки, пациенты, телефоны). |
 | `ClinicHub.SmsAgent` | Приложение для Android: подключается к серверу и отправляет SMS с SIM телефона. |
 | `ClinicHub.Core` | Общие классы (DTO и сущности). |
@@ -12,13 +12,39 @@
 
 ## 1. Запуск сервера на компьютере
 
+### 1.1. База данных
+
+На этапе разработки сервер работает с SQL Server ([ADR-0009](docs/decisions/0009-sqlserver-for-development.md)): подойдёт LocalDB
+(ставится вместе с Visual Studio), SQL Server Express или Developer. Базу создавать руками не нужно: сервер создаст её сам при первом запуске.
+
+### 1.2. Секреты (один раз на компьютер)
+
+Пароли и ключи в git не хранятся. На компьютере разработчика их кладут в `dotnet user-secrets`:
+
 ```powershell
-cd C:\Users\xcx7276\source\repos\ClinicHub.Api
+cd <папка репозитория>\ClinicHub.Api
+dotnet user-secrets set "ConnectionStrings:ClinicHub" "Server=(localdb)\MSSQLLocalDB;Database=ClinicHub;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True"
+dotnet user-secrets set "Jwt:Secret" "<случайная строка не короче 32 символов>"
+```
+
+Для SQL Server Express вместо `(localdb)\MSSQLLocalDB` укажите `.\SQLEXPRESS`.
+
+Все возможные настройки перечислены в `ClinicHub.Api/appsettings.example.json`.
+На сервере клиники вместо user-secrets задаются переменные окружения: `ConnectionStrings__ClinicHub`, `Jwt__Secret`.
+Без строки подключения сервер не запустится, без `Jwt:Secret` — запустится только в режиме разработки (со случайным ключом до перезапуска).
+
+### 1.3. Запуск
+
+```powershell
+cd <папка репозитория>\ClinicHub.Api
 dotnet run --launch-profile http
 ```
 
-Сервер слушает `http://0.0.0.0:5112`. База создаётся сама при первом запуске.
-Вход в Admin по умолчанию: `admin` / `Admin123!`.
+Сервер слушает `http://0.0.0.0:5112`. База и таблицы создаются и обновляются сами при запуске (миграции EF).
+
+**Первый вход в Admin.** Пароля по умолчанию нет. В пустой базе сервер создаёт администратора `admin`
+со случайным паролем и один раз пишет его в консоль и в журнал (`logs/clinichub.log`), ищите строку «Создан первый администратор».
+Свой пароль можно задать заранее: `dotnet user-secrets set "Seed:AdminPassword" "..."` или переменная `SEED_ADMIN_PASSWORD`.
 
 Один раз (PowerShell от имени администратора) откройте порты в брандмауэре:
 

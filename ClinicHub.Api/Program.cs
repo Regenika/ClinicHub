@@ -17,19 +17,40 @@ builder.Logging.AddProvider(new EventLogLoggerProvider(eventLog));
 eventLog.Write("Сервер", "=== Запуск ClinicHub.Api ===");
 
 // ── Конфигурация ────────────────────────────────────────────────────────────
-var jwt = builder.Configuration.GetSection("Jwt").Get<TokenOptions>()
-         ?? new TokenOptions { Secret = builder.Configuration["Jwt:Secret"] ?? "dev-secret-change-me" };
+// Секреты (JWT, пароль БД) в git не лежат: на компьютере разработчика — dotnet user-secrets,
+// на сервере клиники — переменные окружения. Как задать — README, раздел 1.
+var jwt = builder.Configuration.GetSection("Jwt").Get<TokenOptions>() ?? new TokenOptions();
 if (!string.IsNullOrEmpty(builder.Configuration["JWT_SECRET"]))
     jwt.Secret = builder.Configuration["JWT_SECRET"]!;
+if (Encoding.UTF8.GetByteCount(jwt.Secret) < 32)
+{
+    if (!builder.Environment.IsDevelopment())
+        StartupError.Fail(eventLog,
+            "Не задан секрет для токенов входа (Jwt:Secret, не короче 32 символов). " +
+            "Задайте переменную окружения Jwt__Secret или JWT_SECRET и перезапустите сервер.");
+
+    // При разработке не мешаем запуску: случайный секрет на время работы сервера.
+    // После перезапуска Admin попросит войти заново.
+    jwt.Secret = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+    eventLog.Write("Сервер", "Jwt:Secret не задан — взят случайный на этот запуск (только Development).");
+}
 builder.Services.AddSingleton(jwt);
 builder.Services.AddSingleton(new IntegrationOptions
 {
     WebhookApiKey = builder.Configuration["Integration:WebhookApiKey"] ?? "",
 });
 
-// ── БД (EF Core, SQL Server) ────────────────────────────────────────────────
-builder.Services.AddDbContext<ClinicHubDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("ClinicHub") ?? ""));
+// ── БД (EF Core) ────────────────────────────────────────────────────────────
+// Сейчас SQL Server, перед продом — PostgreSQL (ADR-0009). Код запросов пишем переносимо: только LINQ.
+// Схемы site и catalog занимают сайт и каталог (ADR-0007, ADR-0008), таблицы сервера — в схеме по умолчанию.
+var connectionString = builder.Configuration.GetConnectionString("ClinicHub");
+if (string.IsNullOrWhiteSpace(connectionString))
+    StartupError.Fail(eventLog,
+        "Не задана строка подключения к базе (ConnectionStrings:ClinicHub). " +
+        "На компьютере разработчика: dotnet user-secrets set \"ConnectionStrings:ClinicHub\" " +
+        "\"Server=(localdb)\\MSSQLLocalDB;Database=ClinicHub;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True\" " +
+        "(или Server=.\\SQLEXPRESS для SQL Server Express). На сервере: переменная окружения ConnectionStrings__ClinicHub.");
+builder.Services.AddDbContext<ClinicHubDbContext>(options => options.UseSqlServer(connectionString ?? ""));
 
 // ── Сервисы ─────────────────────────────────────────────────────────────────
 builder.Services.AddHttpContextAccessor();
@@ -153,4 +174,19 @@ static bool IsLocal(HttpContext ctx)
 {
     var ip = ctx.Connection.RemoteIpAddress;
     return ip is null || System.Net.IPAddress.IsLoopback(ip);
+}
+
+/// <summary>Понятная остановка при неверной настройке вместо трассировки стека.</summary>
+static class StartupError
+{
+    public static void Fail(EventLog log, string message)
+    {
+        // dotnet ef (создание миграций) тоже запускает Program.cs, но секреты ему не нужны.
+        if (EF.IsDesignTime)
+            return;
+
+        log.Write("Сервер", "ОШИБКА НАСТРОЙКИ: " + message);
+        Console.Error.WriteLine("ОШИБКА НАСТРОЙКИ: " + message);
+        Environment.Exit(1);
+    }
 }
