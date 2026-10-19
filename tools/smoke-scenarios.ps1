@@ -79,7 +79,8 @@ $script:token = $auth.accessToken
 $msk = [TimeZoneInfo]::FindSystemTimeZoneById("Russian Standard Time")
 function MskDate($utcText) { return [TimeZoneInfo]::ConvertTimeFromUtc(([DateTime]::Parse($utcText)).ToUniversalTime(), $msk) }
 $nowMsk = [TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $msk)
-$quiet = $nowMsk.Hour -ge 21 -or $nowMsk.Hour -lt 9
+# Окно отправки — из RateConfig (по умолчанию 9:00–20:00 МСК), то же, что у планировщика SMS.
+$quiet = $nowMsk.TimeOfDay -lt [TimeSpan]"09:00" -or $nowMsk.TimeOfDay -gt [TimeSpan]"20:00"
 
 Write-Host "== Сценарии"
 $list = Call GET "/api/scenarios"
@@ -90,7 +91,7 @@ $sc = Call POST "/api/scenarios" @{ name = "test: контроль"; purpose = "
 Check ($sc.steps[0].sendTime -eq "11:00" -and @($sc.triggerServiceIds).Count -eq 1) "сценарий создан: шаг на 11:00, услуга consultation"
 
 $bad = @{ order = 1; offsetDays = 1; sendTime = "22:00"; text = "x" }
-Call POST "/api/scenarios" @{ name = "test: ночь"; purpose = "Service"; trigger = "Manual"; steps = @($bad) } -Expect 400 -Title "время в окне тишины -> 400" | Out-Null
+Call POST "/api/scenarios" @{ name = "test: ночь"; purpose = "Service"; trigger = "Manual"; steps = @($bad) } -Expect 400 -Title "время шага вне окна отправки -> 400" | Out-Null
 Call POST "/api/scenarios" @{ name = "test: др"; purpose = "Service"; trigger = "Birthday"; steps = @($step) } -Expect 400 -Title "день рождения пока не поддерживается -> 400" | Out-Null
 Call POST "/api/scenarios" @{ name = "test: давно"; purpose = "Marketing"; trigger = "NoVisitFor"; steps = @($step) } -Expect 400 -Title "«давно не были» без числа дней -> 400" | Out-Null
 Call POST "/api/scenarios" @{ name = "test: нет услуги"; purpose = "Service"; trigger = "VisitCompleted"; triggerServiceIds = @("no-such"); steps = @($step) } -Expect 400 -Title "несуществующая услуга -> 400" | Out-Null
@@ -127,7 +128,7 @@ Check ($edited.text -eq "Тест: срок сдвинут в прошлое") "
 $manual = Call POST "/api/reminders" @{ patientId = $patient.id; inDays = 3; time = "10:30"; text = "{name}, ручное напоминание" } -Expect 201 -Title "ручное через 3 дня в 10:30"
 $mDue = MskDate $manual.dueAt
 Check ($mDue.Date -eq $nowMsk.Date.AddDays(3) -and $mDue.Hour -eq 10 -and $mDue.Minute -eq 30) "ручное: $($mDue.ToString('dd.MM.yyyy HH:mm')) МСК"
-Call POST "/api/reminders" @{ patientId = $patient.id; inDays = 1; time = "23:00"; text = "ночь" } -Expect 400 -Title "ручное ночью -> 400" | Out-Null
+Call POST "/api/reminders" @{ patientId = $patient.id; inDays = 1; time = "23:00"; text = "ночь" } -Expect 400 -Title "ручное вне окна отправки -> 400" | Out-Null
 $c = Call POST "/api/reminders/$($manual.id)/cancel" -Title "отмена ручного"
 Check ($c.status -eq "Cancelled") "ручное отменено"
 Call POST "/api/reminders/$($manual.id)/cancel" -Expect 409 -Title "повторная отмена -> 409" | Out-Null
@@ -140,7 +141,7 @@ Call PUT "/api/reminders/$($applied[0].id)" @{ dueAt = $now.AddMinutes(-1).ToStr
 
 Write-Host "== Фоновая отправка (воркер раз в минуту)"
 if ($quiet) {
-    Write-Host "      сейчас окно тишины 21:00–9:00 МСК: воркер ничего не отправляет, проверку отправки пропускаем"
+    Write-Host "      сейчас вне окна отправки 9:00–20:00 МСК: воркер ничего не отправляет, проверку отправки пропускаем"
 } else {
     $deadline = (Get-Date).AddSeconds(100)
     do {

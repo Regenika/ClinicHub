@@ -11,23 +11,14 @@ namespace ClinicHub.Api.Modules.Messaging.Scenarios;
 /// Отправка наступивших напоминаний (ADR-0008 §4). Перед отправкой ещё раз проверяет всё, что могло измениться
 /// с момента планирования, и пишет причину пропуска в StatusReason. Отправляет через существующий конвейер:
 /// персональная одобренная SmsRequest → очередь SIM с её лимитами и окном отправки.
+/// Вне окна отправки (<see cref="SendWindow"/>, часы из RateConfig) ничего не делает: напоминания ждут его открытия.
 /// </summary>
 public sealed class ReminderDispatcher(ClinicHubDbContext db, TimeProvider clock, ILogger<ReminderDispatcher> logger)
 {
-    /// <summary>Окно тишины по Москве: с 21:00 до 9:00 напоминания не уходят, ждут утра.</summary>
-    public static readonly TimeSpan QuietFrom = new(21, 0, 0);
-    public static readonly TimeSpan QuietTo = new(9, 0, 0);
-
-    public static bool IsQuiet(DateTime utc)
-    {
-        var t = MoscowTime.ToMoscow(utc).TimeOfDay;
-        return t >= QuietFrom || t < QuietTo;
-    }
-
     public async Task<int> RunAsync(CancellationToken ct)
     {
         var now = clock.GetUtcNow().UtcDateTime;
-        if (IsQuiet(now))
+        if (!(await SendWindow.LoadAsync(db, ct)).IsOpenAt(now))
             return 0;
 
         var due = await db.PlannedReminders

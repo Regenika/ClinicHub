@@ -341,7 +341,7 @@ Content-Type: application/json
 GET {{host}}/api/reminders?patientId={{myPatientId}}
 Authorization: Bearer {{token}}
 
-### Сдвигаем срок в прошлое — в течение минуты воркер создаст заявку (не в окно тишины 21:00–9:00 МСК)
+### Сдвигаем срок в прошлое — в течение минуты воркер создаст заявку (только в окне отправки из настроек, по умолчанию 9:00–20:00 МСК)
 PUT {{host}}/api/reminders/{{myReminders.response.body.$[0].id}}
 Authorization: Bearer {{token}}
 Content-Type: application/json
