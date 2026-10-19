@@ -23,6 +23,9 @@ public static class CatalogModel
             e.Property(s => s.Name).HasMaxLength(200).IsRequired();
             e.Property(s => s.Description).HasMaxLength(2000).IsRequired();
             e.Property(s => s.PriceFrom).HasPrecision(10, 2);
+            e.Property(s => s.PriceTo).HasPrecision(10, 2);
+            e.Property(s => s.PriceDisplay).HasConversion<string>().HasMaxLength(16);
+            e.Property(s => s.PriceUnit).HasMaxLength(30);
             e.Property(s => s.Source).HasConversion<string>().HasMaxLength(16);
             e.Property(s => s.ExternalId).HasMaxLength(100);
             e.HasOne(s => s.Category).WithMany(c => c.Services).HasForeignKey(s => s.CategoryId).OnDelete(DeleteBehavior.SetNull);
@@ -56,8 +59,12 @@ public static class CatalogModel
         {
             e.ToTable("PriceHistory", Schema);
             e.Property(p => p.ServiceId).HasMaxLength(64).IsRequired();
-            e.Property(p => p.OldPrice).HasPrecision(10, 2);
-            e.Property(p => p.NewPrice).HasPrecision(10, 2);
+            e.Property(p => p.OldPriceFrom).HasPrecision(10, 2);
+            e.Property(p => p.NewPriceFrom).HasPrecision(10, 2);
+            e.Property(p => p.OldPriceTo).HasPrecision(10, 2);
+            e.Property(p => p.NewPriceTo).HasPrecision(10, 2);
+            e.Property(p => p.OldDisplay).HasConversion<string>().HasMaxLength(16);
+            e.Property(p => p.NewDisplay).HasConversion<string>().HasMaxLength(16);
             e.Property(p => p.ChangedBy).HasMaxLength(100).IsRequired();
             // Без внешнего ключа: история должна пережить удаление услуги.
             e.HasIndex(p => new { p.ServiceId, p.ChangedAt });

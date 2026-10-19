@@ -11,6 +11,28 @@ public enum CatalogSource
     Mis,
 }
 
+/// <summary>
+/// Как показывать цену (решение Свята в #26, ADR-0007 §2). Свободного текста вместо цены нет:
+/// после обновления цены в МИС на сайте не должна остаться устаревшая надпись.
+/// </summary>
+public enum PriceDisplay
+{
+    /// <summary>«от N ₽» — по умолчанию. Нужна PriceFrom.</summary>
+    From,
+
+    /// <summary>«N ₽». Нужна PriceFrom.</summary>
+    Exact,
+
+    /// <summary>«от N до M ₽». Нужны PriceFrom и PriceTo.</summary>
+    Range,
+
+    /// <summary>«по запросу», числа не нужны.</summary>
+    OnRequest,
+
+    /// <summary>«бесплатно», числа не нужны.</summary>
+    Free,
+}
+
 public class ServiceCategory
 {
     public int Id { get; set; }
@@ -34,8 +56,16 @@ public class Service
     /// <summary>Описание для сайта (редакторское поле).</summary>
     public string Description { get; set; } = "";
 
-    /// <summary>Цена «от», ₽. null — цена не указана («по запросу»).</summary>
+    /// <summary>Цена, ₽: нижняя граница («от N») или точная («N»). Позже её будет считать синхронизация с МИС.</summary>
     public decimal? PriceFrom { get; set; }
+
+    /// <summary>Верхняя граница, ₽ — только для PriceDisplay.Range.</summary>
+    public decimal? PriceTo { get; set; }
+
+    public PriceDisplay PriceDisplay { get; set; } = PriceDisplay.From;
+
+    /// <summary>Единица: «за зону», «за курс». Цифр в ней быть не может, чтобы туда не вписали цену.</summary>
+    public string? PriceUnit { get; set; }
 
     public int DurationMinutes { get; set; } = 45;
     public bool IsVisibleOnSite { get; set; } = true;
@@ -87,13 +117,22 @@ public class DoctorService
     public Service? Service { get; set; }
 }
 
-/// <summary>История цен: нужна для разборов «почему на сайте была другая цена».</summary>
+/// <summary>
+/// История цен: нужна для разборов «почему на сайте была другая цена».
+/// Запись появляется при изменении PriceFrom, PriceTo или PriceDisplay; в ней обе стороны всех трёх полей.
+/// </summary>
 public class PriceHistory
 {
     public long Id { get; set; }
     public string ServiceId { get; set; } = "";
-    public decimal? OldPrice { get; set; }
-    public decimal? NewPrice { get; set; }
+    public decimal? OldPriceFrom { get; set; }
+    public decimal? NewPriceFrom { get; set; }
+    public decimal? OldPriceTo { get; set; }
+    public decimal? NewPriceTo { get; set; }
+
+    /// <summary>null — записи до этого не было (услуга создана).</summary>
+    public PriceDisplay? OldDisplay { get; set; }
+    public PriceDisplay NewDisplay { get; set; }
     public DateTime ChangedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>Кто или что поменяло: «user:admin», «mis-sync», «seed».</summary>

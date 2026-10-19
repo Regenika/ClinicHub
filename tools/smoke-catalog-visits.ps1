@@ -62,6 +62,9 @@ function Check([bool]$Condition, [string]$Text) {
     else { $script:failed++; Write-Host "FAIL  $Text" -ForegroundColor Red }
 }
 
+# Пробелы в «4 000» сервер ставит неразрывные: для сравнения приводим к обычным.
+function Norm([string]$Text) { return ($Text -replace '\s', ' ') }
+
 Write-Host "== Вход"
 $auth = Call POST "/api/auth/login" @{ login = $Login; password = $Password } -Anon -Title "Вход"
 if (-not $auth) { Write-Host "Не удалось войти — дальше проверять нечего." -ForegroundColor Red; exit 1 }
@@ -86,11 +89,41 @@ Call POST "/api/catalog/admin/services" $svc -Expect 409 -Title "повторн�
 $svc.Remove("id"); $svc.priceFrom = 4000
 $updated = Call PUT "/api/catalog/admin/services/test-botox" $svc
 Check ($updated.priceFrom -eq 4000) "цена обновилась до 4000"
+Check ((Norm $updated.priceText) -eq "от 4 000 ₽") "текст цены: «$($updated.priceText)»"
 $history = Call GET "/api/catalog/admin/services/test-botox/price-history"
 # История цен переживает удаление услуги, поэтому после прошлых прогонов там могут быть старые записи:
 # проверяем две последние (сервер отдаёт свежие сверху).
 $h = @($history)
-Check ($h.Count -ge 2 -and $h[0].oldPrice -eq 3500 -and $h[0].newPrice -eq 4000 -and $null -eq $h[1].oldPrice -and $h[1].newPrice -eq 3500) "в истории цен последние записи: создание (— -> 3500) и правка (3500 -> 4000)"
+Check ($h.Count -ge 2 -and $h[0].oldPriceFrom -eq 3500 -and $h[0].newPriceFrom -eq 4000 -and $null -eq $h[1].oldPriceFrom -and $null -eq $h[1].oldDisplay -and $h[1].newPriceFrom -eq 3500) "в истории цен последние записи: создание (— -> 3500) и правка (3500 -> 4000)"
+
+# Способы показа цены (решение в #26)
+$svc.priceDisplay = "Range"; $svc.priceTo = 6000; $svc.priceUnit = "за зону"
+$r = Call PUT "/api/catalog/admin/services/test-botox" $svc -Title "диапазон цен с единицей"
+Check ((Norm $r.priceText) -eq "от 4 000 до 6 000 ₽ за зону") "текст диапазона: «$($r.priceText)»"
+$h2 = @(Call GET "/api/catalog/admin/services/test-botox/price-history")
+Check ($h2[0].oldDisplay -eq "From" -and $h2[0].newDisplay -eq "Range" -and $h2[0].newPriceTo -eq 6000) "смена способа показа попала в историю"
+$svc.priceUnit = "за курс"
+Call PUT "/api/catalog/admin/services/test-botox" $svc -Title "смена только единицы" | Out-Null
+$h3 = @(Call GET "/api/catalog/admin/services/test-botox/price-history")
+Check ($h3.Count -eq $h2.Count) "смена единицы не пишет историю цен"
+$svc.priceDisplay = "OnRequest"
+$r = Call PUT "/api/catalog/admin/services/test-botox" $svc -Title "по запросу"
+Check ($r.priceText -eq "по запросу") "текст: «$($r.priceText)»"
+$svc.priceDisplay = "Free"
+$r = Call PUT "/api/catalog/admin/services/test-botox" $svc -Title "бесплатно"
+Check ($r.priceText -eq "бесплатно") "текст: «$($r.priceText)», единица не дописывается"
+$svc.priceDisplay = "Exact"; $svc.priceFrom = $null
+$r = Call PUT "/api/catalog/admin/services/test-botox" $svc -Title "«ровно», но без числа"
+Check ($r.priceText -eq "по запросу") "без нужного числа показывается «по запросу»"
+$bad = $svc.Clone(); $bad.priceUnit = "за 2 зоны"
+Call PUT "/api/catalog/admin/services/test-botox" $bad -Expect 400 -Title "цифры в единице -> 400" | Out-Null
+$bad = $svc.Clone(); $bad.priceFrom = 5000; $bad.priceTo = 3000; $bad.priceDisplay = "Range"
+Call PUT "/api/catalog/admin/services/test-botox" $bad -Expect 400 -Title "«до» меньше «от» -> 400" | Out-Null
+$bad = $svc.Clone(); $bad.priceDisplay = "Cheap"
+Call PUT "/api/catalog/admin/services/test-botox" $bad -Expect 400 -Title "неизвестный способ показа -> 400" | Out-Null
+$svc.priceDisplay = "From"; $svc.priceFrom = 4000; $svc.priceTo = $null; $svc.priceUnit = $null
+Call PUT "/api/catalog/admin/services/test-botox" $svc -Title "вернули «от 4 000 ₽»" | Out-Null
+Check (@($pubServices | Where-Object { $_.priceText }).Count -eq @($pubServices).Count) "у всех услуг на сайте есть текст цены"
 Check ((@($pubServices) | Where-Object { $_.id -eq "test-botox" }).Count -eq 0) "скрытая услуга не видна на сайте"
 Call POST "/api/catalog/admin/services" @{ id = "Ботокс 1"; name = "плохой id"; durationMinutes = 30 } -Expect 400 -Title "неправильный id услуги -> 400" | Out-Null
 Call POST "/api/catalog/admin/services" @{ id = "test-bad-price"; name = "x"; priceFrom = -1; durationMinutes = 30 } -Expect 400 -Title "отрицательная цена -> 400" | Out-Null

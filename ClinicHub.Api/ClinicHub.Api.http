@@ -57,7 +57,7 @@ Content-Type: application/json
 GET {{host}}/api/catalog/admin/services
 Authorization: Bearer {{token}}
 
-### Новая услуга (в истории цен появится запись «— → 3500»)
+### Новая услуга (в истории цен появится запись «— → от 3500»)
 POST {{host}}/api/catalog/admin/services
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -88,11 +88,37 @@ Content-Type: application/json
   "sortOrder": 100
 }
 
+### Способ показа цены (решение в #26): From «от N ₽» | Exact «N ₽» | Range «от N до M ₽» | OnRequest | Free.
+### Единица — без цифр. В ответе priceText — готовая строка: «от 4 000 до 6 000 ₽ за зону».
+PUT {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "categoryId": {{category.response.body.$.id}},
+  "name": "Тестовая услуга: ботулинотерапия",
+  "description": "Цена диапазоном.",
+  "priceFrom": 4000,
+  "priceTo": 6000,
+  "priceDisplay": "Range",
+  "priceUnit": "за зону",
+  "durationMinutes": 30,
+  "isVisibleOnSite": false,
+  "sortOrder": 100
+}
+
+### Ошибка: цифры в единице (ожидается 400)
+PUT {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Тестовая услуга: ботулинотерапия", "priceFrom": 4000, "priceUnit": "за 2 зоны", "durationMinutes": 30 }
+
 ###
 GET {{host}}/api/catalog/admin/services/test-botox
 Authorization: Bearer {{token}}
 
-### История цен услуги (ожидается 2 записи)
+### История цен услуги: создание, правка цены, смена способа показа (свежие сверху)
 GET {{host}}/api/catalog/admin/services/test-botox/price-history
 Authorization: Bearer {{token}}
 

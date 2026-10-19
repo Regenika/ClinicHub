@@ -53,15 +53,20 @@ public static partial class CatalogEndpoints
             .Select(c => new PublicCategoryDto(c.Id, c.Name, c.SortOrder))
             .ToListAsync(ct));
 
-    private static async Task<IResult> GetPublicServices(ClinicHubDbContext db, CancellationToken ct) =>
-        Results.Ok(await db.Services
+    private static async Task<IResult> GetPublicServices(ClinicHubDbContext db, CancellationToken ct)
+    {
+        var services = await db.Services
+            .Include(s => s.Category)
             // Услуга из скрытой категории тоже скрыта.
             .Where(s => s.IsVisibleOnSite && (s.Category == null || s.Category.IsVisibleOnSite))
             .OrderBy(s => s.SortOrder).ThenBy(s => s.Name)
-            .Select(s => new PublicServiceDto(
-                s.Id, s.CategoryId, s.Category != null ? s.Category.Name : null, s.Name, s.Description,
-                s.PriceFrom, s.DurationMinutes, s.SortOrder))
-            .ToListAsync(ct));
+            .AsNoTracking()
+            .ToListAsync(ct);
+        return Results.Ok(services.Select(s => new PublicServiceDto(
+            s.Id, s.CategoryId, s.Category?.Name, s.Name, s.Description,
+            s.PriceFrom, s.PriceTo, s.PriceDisplay, s.PriceUnit, PriceFormat.Text(s),
+            s.DurationMinutes, s.SortOrder)));
+    }
 
     private static async Task<IResult> GetPublicDoctors(ClinicHubDbContext db, CancellationToken ct)
     {
@@ -148,8 +153,13 @@ public static partial class CatalogEndpoints
         var s = new Service { Id = id };
         Apply(s, dto);
         db.Services.Add(s);
-        if (s.PriceFrom is not null)
-            db.PriceHistory.Add(new PriceHistory { ServiceId = s.Id, OldPrice = null, NewPrice = s.PriceFrom, ChangedBy = ChangedBy(user) });
+        // Первая запись истории — с какой ценой услуга появилась (Old* пустые).
+        db.PriceHistory.Add(new PriceHistory
+        {
+            ServiceId = s.Id,
+            NewPriceFrom = s.PriceFrom, NewPriceTo = s.PriceTo, NewDisplay = s.PriceDisplay,
+            ChangedBy = ChangedBy(user),
+        });
 
         await db.SaveChangesAsync(ct);
         return Results.Created($"/api/catalog/admin/services/{s.Id}", ToDto(s));
@@ -164,12 +174,19 @@ public static partial class CatalogEndpoints
         if (await ValidateServiceAsync(dto, db, ct) is { } error)
             return Results.BadRequest(error);
 
-        var oldPrice = s.PriceFrom;
+        var (oldFrom, oldTo, oldDisplay) = (s.PriceFrom, s.PriceTo, s.PriceDisplay);
         Apply(s, dto);
         s.UpdatedAt = DateTime.UtcNow;
-        // Каждое изменение цены — в историю (ADR-0007 §2).
-        if (oldPrice != s.PriceFrom)
-            db.PriceHistory.Add(new PriceHistory { ServiceId = s.Id, OldPrice = oldPrice, NewPrice = s.PriceFrom, ChangedBy = ChangedBy(user) });
+        // Каждое изменение цены или способа её показа — в историю (ADR-0007 §2). Единица — нет: это подпись, не цена.
+        if (oldFrom != s.PriceFrom || oldTo != s.PriceTo || oldDisplay != s.PriceDisplay)
+            db.PriceHistory.Add(new PriceHistory
+            {
+                ServiceId = s.Id,
+                OldPriceFrom = oldFrom, NewPriceFrom = s.PriceFrom,
+                OldPriceTo = oldTo, NewPriceTo = s.PriceTo,
+                OldDisplay = oldDisplay, NewDisplay = s.PriceDisplay,
+                ChangedBy = ChangedBy(user),
+            });
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(ToDto(s));
@@ -197,15 +214,30 @@ public static partial class CatalogEndpoints
         Results.Ok(await db.PriceHistory
             .Where(p => p.ServiceId == id)
             .OrderByDescending(p => p.ChangedAt).ThenByDescending(p => p.Id)
-            .Select(p => new PriceHistoryDto(p.Id, p.ServiceId, p.OldPrice, p.NewPrice, p.ChangedAt, p.ChangedBy))
+            .Select(p => new PriceHistoryDto(
+                p.Id, p.ServiceId, p.OldPriceFrom, p.NewPriceFrom, p.OldPriceTo, p.NewPriceTo,
+                p.OldDisplay, p.NewDisplay, p.ChangedAt, p.ChangedBy))
             .ToListAsync(ct));
 
     private static async Task<string?> ValidateServiceAsync(ServiceInputDto dto, ClinicHubDbContext db, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
             return "Укажите название услуги.";
-        if (dto.PriceFrom is decimal price && (price < 0 || price > 10_000_000m))
+        if (!Enum.IsDefined(dto.PriceDisplay))
+            return "Способ показа цены: From, Exact, Range, OnRequest или Free.";
+        if (dto.PriceFrom is < 0m or > MaxPrice || dto.PriceTo is < 0m or > MaxPrice)
             return "Цена должна быть от 0 до 10 000 000 ₽.";
+        if (dto.PriceFrom is decimal lo && dto.PriceTo is decimal hi && hi < lo)
+            return "Цена «до» меньше цены «от».";
+        if (dto.PriceUnit is { } unit)
+        {
+            unit = unit.Trim();
+            if (unit.Length > 30)
+                return "Единица цены — до 30 символов, например «за зону».";
+            // Решение в #26: в единице не может быть цифр, иначе туда впишут цену текстом и она устареет.
+            if (unit.Any(char.IsDigit))
+                return "В единице цены не должно быть цифр (например, «за зону», «за курс»). Цена задаётся числами.";
+        }
         if (dto.DurationMinutes is < 5 or > 600)
             return "Длительность — от 5 до 600 минут.";
         if (dto.CategoryId is int catId && !await db.ServiceCategories.AnyAsync(c => c.Id == catId, ct))
@@ -219,6 +251,9 @@ public static partial class CatalogEndpoints
         s.Name = dto.Name.Trim();
         s.Description = dto.Description?.Trim() ?? "";
         s.PriceFrom = dto.PriceFrom;
+        s.PriceTo = dto.PriceTo;
+        s.PriceDisplay = dto.PriceDisplay;
+        s.PriceUnit = string.IsNullOrWhiteSpace(dto.PriceUnit) ? null : dto.PriceUnit.Trim();
         s.DurationMinutes = dto.DurationMinutes;
         s.IsVisibleOnSite = dto.IsVisibleOnSite;
         s.SortOrder = dto.SortOrder;
@@ -226,7 +261,8 @@ public static partial class CatalogEndpoints
     }
 
     private static ServiceDto ToDto(Service s) => new(
-        s.Id, s.CategoryId, s.Name, s.Description, s.PriceFrom, s.DurationMinutes, s.IsVisibleOnSite, s.SortOrder,
+        s.Id, s.CategoryId, s.Name, s.Description,
+        s.PriceFrom, s.PriceTo, s.PriceDisplay, s.PriceUnit, PriceFormat.Text(s), s.DurationMinutes, s.IsVisibleOnSite, s.SortOrder,
         s.Source, s.ExternalId, s.SyncedAt, s.CreatedAt, s.UpdatedAt);
 
     // ── Врачи ───────────────────────────────────────────────────────────────
@@ -319,6 +355,8 @@ public static partial class CatalogEndpoints
         d.Services.Select(x => x.ServiceId).OrderBy(x => x).ToList());
 
     // ── Общее ───────────────────────────────────────────────────────────────
+
+    private const decimal MaxPrice = 10_000_000m;
 
     [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$")]
     private static partial Regex SlugRegex();
