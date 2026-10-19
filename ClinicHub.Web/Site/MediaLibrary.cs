@@ -6,9 +6,25 @@ using Microsoft.Extensions.Caching.Memory;
 namespace ClinicHub.Web.Site;
 
 /// <summary>Сведения о картинке без самих данных — для списков, выбора в формах и alt на сайте.</summary>
-public sealed record MediaInfo(int Id, string FileName, string ContentType, int Size, string Alt, DateTime UploadedAt, string UploadedBy)
+public sealed record MediaInfo(int Id, string FileName, string ContentType, int Size, string Alt, DateTime UploadedAt, string UploadedBy,
+    int FocusX = 50, int FocusY = 50, int Zoom = 100)
 {
     public string Url => $"/media/{Id}";
+
+    /// <summary>
+    /// Кадр для рамки блока: картинка заполняет рамку (object-fit: cover), точка интереса остаётся в кадре,
+    /// приближение — от неё же. Числа заданы в коде и проверены по диапазонам, поэтому в style безопасно.
+    /// </summary>
+    public string FrameStyle(int? focusX = null, int? focusY = null, int? zoom = null)
+    {
+        var x = Math.Clamp(focusX ?? FocusX, 0, 100);
+        var y = Math.Clamp(focusY ?? FocusY, 0, 100);
+        var z = Math.Clamp(zoom ?? Zoom, 100, 300);
+        var style = $"object-position:{x}% {y}%;";
+        if (z != 100)
+            style += $"transform:scale({(z / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture)});transform-origin:{x}% {y}%;";
+        return style;
+    }
 }
 
 /// <summary>
@@ -29,7 +45,7 @@ public sealed class MediaLibrary(IDbContextFactory<SiteDbContext> dbFactory, Sit
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             return await db.MediaFiles.AsNoTracking().OrderByDescending(m => m.UploadedAt)
-                .Select(m => new MediaInfo(m.Id, m.FileName, m.ContentType, m.Size, m.Alt, m.UploadedAt, m.UploadedBy))
+                .Select(m => new MediaInfo(m.Id, m.FileName, m.ContentType, m.Size, m.Alt, m.UploadedAt, m.UploadedBy, m.FocusX, m.FocusY, m.Zoom))
                 .ToListAsync();
         });
         return list ?? [];
@@ -86,7 +102,7 @@ public sealed class MediaLibrary(IDbContextFactory<SiteDbContext> dbFactory, Sit
         await db.SaveChangesAsync();
         siteCache.Clear();
         logger.LogInformation("Загружена картинка {Id} «{Name}», {Size} байт ({By})", file.Id, name, data.Length, uploadedBy);
-        return (new MediaInfo(file.Id, file.FileName, file.ContentType, file.Size, file.Alt, file.UploadedAt, file.UploadedBy), null);
+        return (new MediaInfo(file.Id, file.FileName, file.ContentType, file.Size, file.Alt, file.UploadedAt, file.UploadedBy, file.FocusX, file.FocusY, file.Zoom), null);
     }
 
     public async Task SetAltAsync(int id, string alt)
@@ -94,6 +110,18 @@ public sealed class MediaLibrary(IDbContextFactory<SiteDbContext> dbFactory, Sit
         await using var db = await dbFactory.CreateDbContextAsync();
         var file = await db.MediaFiles.FirstAsync(m => m.Id == id);
         file.Alt = alt.Trim().Length > 300 ? alt.Trim()[..300] : alt.Trim();
+        await db.SaveChangesAsync();
+        siteCache.Clear();
+    }
+
+    /// <summary>Кадрирование: точка интереса и приближение (значения обрезаются до допустимых).</summary>
+    public async Task SetFramingAsync(int id, int focusX, int focusY, int zoom)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var file = await db.MediaFiles.FirstAsync(m => m.Id == id);
+        file.FocusX = Math.Clamp(focusX, 0, 100);
+        file.FocusY = Math.Clamp(focusY, 0, 100);
+        file.Zoom = Math.Clamp(zoom, 100, 300);
         await db.SaveChangesAsync();
         siteCache.Clear();
     }

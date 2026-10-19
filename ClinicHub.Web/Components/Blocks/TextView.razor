@@ -7,7 +7,7 @@
     }
     @if (Settings.ImageId is not null)
     {
-        <MediaImg Id="Settings.ImageId" CssClass="text-image" />
+        <div class="photo-frame text-image"><MediaImg Id="Settings.ImageId" CssClass="cover" /></div>
     }
     @foreach (var paragraph in Paragraphs)
     {

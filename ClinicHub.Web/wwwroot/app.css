@@ -300,7 +300,7 @@ ul.form-errors { margin: 0; padding: 14px 18px 14px 36px; }
 .cover { width: 100%; height: 100%; object-fit: cover; }
 .photo-frame { overflow: hidden; border-radius: var(--radius); background: var(--photo); }
 .hero__photo--image { overflow: hidden; border-radius: 28px 28px 28px 140px; background: var(--accent-soft); }
-.text-image { width: 100%; max-height: 520px; object-fit: cover; border-radius: var(--radius); }
+.text-image { width: 100%; aspect-ratio: 16 / 9; }
 
 /* ── Фон блока из палитры (Blocks/BlockStyles.cs) ──────────── */
 /* Свой фон блока (у «Услуг» белая полоса, у «Каналов» основной цвет) уступает выбранному. */
@@ -327,7 +327,7 @@ ul.form-errors { margin: 0; padding: 14px 18px 14px 36px; }
 /* ── Медиатека и выбор картинки ────────────────────────────── */
 .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 .media-card { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.media-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm); background: var(--photo); }
+.media-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: var(--radius-sm); background: var(--photo); }
 .media-picker { display: flex; align-items: center; gap: 12px; }
 .media-picker select { flex: 1 1 auto; }
 .media-picker__thumb { width: 72px; height: 54px; flex: none; object-fit: cover; border-radius: 8px; background: var(--photo); }
@@ -340,3 +340,41 @@ ul.form-errors { margin: 0; padding: 14px 18px 14px 36px; }
 .color-field input[type=text] { width: 120px; }
 .theme-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .theme-preview__btn { padding: 8px 18px; border-radius: var(--pill); color: #fff; }
+
+/* ── Кадрирование (медиатека) ──────────────────────────────── */
+.framing__controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.framing__controls input[type=range] { width: 100%; accent-color: var(--accent); }
+.framing__source { display: flex; flex-direction: column; gap: 6px; }
+.framing__whole { position: relative; display: inline-block; align-self: flex-start; max-width: 100%; }
+.framing__whole img { max-height: 280px; max-width: 100%; width: auto; border-radius: 8px; }
+.framing__dot { position: absolute; width: 22px; height: 22px; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 2px var(--ink); pointer-events: none; }
+.framing__dot::before, .framing__dot::after { content: ""; position: absolute; left: 50%; top: 50%; background: #fff; transform: translate(-50%, -50%); }
+.framing__dot::before { width: 2px; height: 10px; }
+.framing__dot::after { width: 10px; height: 2px; }
+.framing__previews { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+.framing__preview { display: flex; flex-direction: column; gap: 6px; }
+/* Рамки как на сайте, в уменьшенном виде. */
+.frame--hero { width: 220px; aspect-ratio: 5 / 4; border-radius: 12px 12px 12px 56px; }
+.frame--hero-mobile { width: 180px; aspect-ratio: 4 / 3; border-radius: 0 0 0 28px; }
+.frame--doctor { width: 112px; aspect-ratio: 4 / 5; }
+.frame--result { width: 150px; aspect-ratio: 1; }
+.frame--text { width: 240px; aspect-ratio: 16 / 9; }
+
+/* ── Узкие экраны: картинки рядом со своим текстом ─────────── */
+/* Обложка: когда две колонки не помещаются, фото идёт первым и ниже, заголовок — сразу под ним,
+   а не фото отдельно под текстом, где непонятно, к чему оно относится. */
+@media (max-width: 920px) {
+    .hero { padding-top: 24px; gap: 24px; }
+    .hero__photo { order: -1; flex: 1 1 100%; aspect-ratio: 16 / 10; }
+    .hero__photo.photo-slot, .hero__photo--image { border-radius: var(--radius) var(--radius) var(--radius) 72px; }
+}
+@media (max-width: 640px) {
+    .hero { padding-top: 0; }
+    /* Фото на всю ширину экрана, от края до края. */
+    .hero__photo { flex: 0 0 auto; width: calc(100% + 2 * var(--gutter)); margin: 0 calc(-1 * var(--gutter)); aspect-ratio: 4 / 3; }
+    .hero__photo.photo-slot, .hero__photo--image { border-radius: 0 0 0 56px; }
+    /* Врач — строкой: небольшое фото слева, имя, специальность и кнопка справа. */
+    .doctor { display: grid; grid-template-columns: 112px 1fr; column-gap: 16px; row-gap: 4px; align-items: start; }
+    .doctor > .photo-slot--doctor { grid-row: 1 / span 3; width: 112px; }
+    .doctor > .photo-slot.photo-slot--doctor { padding: 8px; font-size: 11px; }
+}

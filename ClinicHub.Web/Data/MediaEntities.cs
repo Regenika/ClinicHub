@@ -20,6 +20,15 @@ public sealed class MediaFile
     /// <summary>Описание для незрячих и поисковиков (alt). Подставляется везде, где картинка стоит на сайте.</summary>
     public string Alt { get; set; } = "";
 
+    // Кадрирование: картинка заполняет рамку блока (обложка 5:4, врач 4:5, «до/после» 1:1…), лишнее обрезается.
+    // Точка интереса — что должно остаться в кадре при любой рамке; приближение — насколько увеличить.
+    /// <summary>Точка интереса по горизонтали, % от левого края (0–100).</summary>
+    public int FocusX { get; set; } = 50;
+    /// <summary>Точка интереса по вертикали, % от верхнего края (0–100).</summary>
+    public int FocusY { get; set; } = 50;
+    /// <summary>Приближение, % (100 — без приближения, до 300).</summary>
+    public int Zoom { get; set; } = 100;
+
     public byte[] Data { get; set; } = [];
 
     public string UploadedBy { get; set; } = "";

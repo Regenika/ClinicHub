@@ -29,6 +29,11 @@
         }
     </div>
 
+    @if (framing is not null)
+    {
+        <FramingEditor Media="framing" OnSave="SaveFramingAsync" OnClose="() => framing = null" />
+    }
+
     @if (items.Count == 0)
     {
         <p class="muted">Картинок пока нет.</p>
@@ -44,6 +49,7 @@
                         <span class="muted small">Описание (alt)</span>
                         <input type="text" value="@m.Alt" placeholder="Что на картинке" @onchange="e => SaveAltAsync(m.Id, e.Value as string)" />
                     </label>
+                    <button class="btn btn--outline btn--sm" @onclick="() => framing = m">Кадр: что оставить в рамке</button>
                     @if (confirmDelete == m.Id)
                     {
                         <button class="btn btn--danger btn--sm" @onclick="() => DeleteAsync(m.Id)">Точно удалить? Там, где она стоит, будет пусто</button>
@@ -97,6 +103,17 @@
     {
         await Media.SetAltAsync(id, alt ?? "");
         items = await Media.ListAsync();
+    }
+
+    private MediaInfo? framing;
+
+    private async Task SaveFramingAsync((int X, int Y, int Zoom) f)
+    {
+        await Media.SetFramingAsync(framing!.Id, f.X, f.Y, f.Zoom);
+        items = await Media.ListAsync();
+        messages.Clear();
+        messages.Add(new($"Кадр «{framing.FileName}» сохранён. На этом компьютере уже видно, на других — в течение 30 секунд.", false));
+        framing = null;
     }
 
     private async Task DeleteAsync(int id)

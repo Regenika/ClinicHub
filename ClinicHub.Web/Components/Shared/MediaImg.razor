@@ -1,9 +1,10 @@
-@* Картинка из медиатеки. Описание (alt) — из медиатеки; картинку удалили — ничего не выводит, и блок показывает место для фото. *@
+@* Картинка из медиатеки. Описание (alt) и кадр (точка интереса, приближение) — из медиатеки;
+   картинку удалили — ничего не выводит, и блок показывает место для фото. *@
 @inject MediaLibrary Media
 
 @if (info is not null)
 {
-    <img src="@info.Url" alt="@info.Alt" class="@CssClass" loading="@(Eager ? "eager" : "lazy")" decoding="async" />
+    <img src="@info.Url" alt="@info.Alt" class="@CssClass" style="@info.FrameStyle()" loading="@(Eager ? "eager" : "lazy")" decoding="async" />
 }
 
 @code {

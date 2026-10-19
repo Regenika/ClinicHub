@@ -272,6 +272,12 @@ namespace ClinicHub.Web.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int>("FocusX")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FocusY")
+                        .HasColumnType("int");
+
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -287,6 +293,9 @@ namespace ClinicHub.Web.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("Zoom")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
