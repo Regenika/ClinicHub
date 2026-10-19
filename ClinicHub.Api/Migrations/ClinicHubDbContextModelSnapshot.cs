@@ -95,7 +95,7 @@ namespace ClinicHub.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("FiredOnDate")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("date");
 
                     b.Property<int>("PatientId")
                         .HasColumnType("int");
@@ -190,7 +190,7 @@ namespace ClinicHub.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("DateOfBirth")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("date");
 
                     b.Property<string>("Email")
                         .HasColumnType("nvarchar(max)");
