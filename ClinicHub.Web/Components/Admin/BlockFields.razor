@@ -1,0 +1,138 @@
+@using System.ComponentModel.DataAnnotations
+@using System.Reflection
+@inject ISiteCatalog Catalog
+
+@* Форма полей блока, построенная по его классу настроек (Blocks/BlockSettings.cs): подписи из [Display],
+   многострочные поля по [DataType(MultilineText)]. Новый тип блока получает форму без отдельного кода.
+   Значения пишутся прямо в объект Model; сохраняет его страница редактора. *@
+
+@foreach (var p in Properties(Model.GetType()))
+{
+    var id = Prefix + p.Name;
+    var label = p.GetCustomAttribute<DisplayAttribute>()?.Name ?? p.Name;
+    var hint = p.GetCustomAttribute<DisplayAttribute>()?.Description;
+
+    if (p.PropertyType == typeof(string) && p.Name == "PrimaryServiceId")
+    {
+        <div class="field">
+            <label for="@id">@label</label>
+            <select id="@id" value="@(p.GetValue(Model) as string)" @onchange="e => p.SetValue(Model, e.Value as string ?? string.Empty)">
+                <option value="">— выбор услуги —</option>
+                @foreach (var s in Catalog.Services)
+                {
+                    <option value="@s.Id">@s.Name</option>
+                }
+            </select>
+            <Hint Text="@hint" />
+        </div>
+    }
+    else if (p.PropertyType == typeof(string))
+    {
+        var multiline = p.GetCustomAttribute<DataTypeAttribute>()?.DataType == DataType.MultilineText;
+        <div class="field">
+            <label for="@id">@label</label>
+            @if (multiline)
+            {
+                <textarea id="@id" rows="4" @onchange="e => p.SetValue(Model, (e.Value as string ?? string.Empty).Trim())">@(p.GetValue(Model) as string)</textarea>
+            }
+            else
+            {
+                <input id="@id" type="text" value="@(p.GetValue(Model) as string)" @onchange="e => p.SetValue(Model, (e.Value as string ?? string.Empty).Trim())" />
+            }
+            <Hint Text="@hint" />
+        </div>
+    }
+    else if (p.PropertyType == typeof(bool))
+    {
+        <label class="check">
+            <input type="checkbox" checked="@((bool)p.GetValue(Model)!)" @onchange="e => p.SetValue(Model, (bool)e.Value!)" />
+            <span>@label</span>
+        </label>
+    }
+    else if (p.PropertyType == typeof(List<string>))
+    {
+        var selected = (List<string>)p.GetValue(Model)!;
+        var options = p.Name == "DoctorIds"
+            ? Catalog.Doctors.Select(d => (d.Id, d.Name))
+            : Catalog.Services.Select(s => (s.Id, s.Name));
+        <fieldset class="field">
+            <legend>@label</legend>
+            @foreach (var (key, name) in options)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@selected.Contains(key)" @onchange="e => Toggle(selected, key, (bool)e.Value!)" />
+                    <span>@name</span>
+                </label>
+            }
+            <Hint Text="@hint" />
+        </fieldset>
+    }
+    else if (ItemType(p) is { } itemType)
+    {
+        var list = (System.Collections.IList)p.GetValue(Model)!;
+        <fieldset class="field block-items">
+            <legend>@label</legend>
+            @for (var i = 0; i < list.Count; i++)
+            {
+                var index = i;
+                <div class="block-item">
+                    <BlockFields Model="list[index]!" Prefix="@($"{id}-{index}-")" />
+                    <div class="row-wrap">
+                        <button type="button" class="btn btn--outline btn--sm" disabled="@(index == 0)" @onclick="() => Swap(list, index, index - 1)">↑ Выше</button>
+                        <button type="button" class="btn btn--outline btn--sm" @onclick="() => list.RemoveAt(index)">Убрать</button>
+                    </div>
+                </div>
+            }
+            <div>
+                <button type="button" class="btn btn--outline btn--sm" @onclick="() => list.Add(Activator.CreateInstance(itemType))">+ Добавить</button>
+            </div>
+            <Hint Text="@hint" />
+        </fieldset>
+    }
+    else if (p.PropertyType.IsClass)
+    {
+        var nested = p.GetValue(Model);
+        <fieldset class="field block-items">
+            <legend>@label</legend>
+            @if (nested is null)
+            {
+                <div>
+                    <button type="button" class="btn btn--outline btn--sm" @onclick="() => p.SetValue(Model, Activator.CreateInstance(p.PropertyType))">+ Добавить</button>
+                </div>
+            }
+            else
+            {
+                <BlockFields Model="nested" Prefix="@(id + "-")" />
+                <div>
+                    <button type="button" class="btn btn--outline btn--sm" @onclick="() => p.SetValue(Model, null)">Убрать</button>
+                </div>
+            }
+            <Hint Text="@hint" />
+        </fieldset>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public object Model { get; set; } = default!;
+    /// <summary>Префикс id полей: у вложенных форм id не должны совпадать.</summary>
+    [Parameter] public string Prefix { get; set; } = "b-";
+
+    private static IEnumerable<PropertyInfo> Properties(Type t) =>
+        t.GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.CanRead && p.CanWrite);
+
+    /// <summary>Тип элемента для списка объектов (карточки, статьи); для List&lt;string&gt; и прочего — null.</summary>
+    private static Type? ItemType(PropertyInfo p) =>
+        p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(List<>)
+        && p.PropertyType.GetGenericArguments()[0] is { IsClass: true } item && item != typeof(string)
+            ? item
+            : null;
+
+    /// <summary>Выбранное остаётся в своём порядке, новое добавляется в конец.</summary>
+    private static void Toggle(List<string> selected, string key, bool on)
+    {
+        if (on && !selected.Contains(key)) selected.Add(key);
+        if (!on) selected.Remove(key);
+    }
+
+    private static void Swap(System.Collections.IList list, int a, int b) => (list[a], list[b]) = (list[b], list[a]);
+}

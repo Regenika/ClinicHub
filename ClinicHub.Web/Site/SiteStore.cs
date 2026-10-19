@@ -61,14 +61,19 @@ public sealed class SiteStore(IDbContextFactory<SiteDbContext> dbFactory, SiteCa
             })
             .FirstOrDefaultAsync(ct);
         if (page?.Version is null) return null;
+        return new PublishedPage(page.Path, page.Title, page.Description, Render(page.Version.Blocks, page.Path, logger));
+    }
 
+    /// <summary>Видимые блоки версии, готовые к отрисовке. Общий для сайта и предпросмотра черновика в админке.</summary>
+    public static List<RenderedBlock> Render(IEnumerable<Block> source, string path, ILogger logger)
+    {
         var blocks = new List<RenderedBlock>();
-        foreach (var b in page.Version.Blocks)
+        foreach (var b in source.Where(b => b.IsVisible).OrderBy(b => b.Order))
         {
             // Неизвестный тип или битый JSON — пропускаем блок и пишем в журнал, а страницу показываем.
             if (!BlockTypes.All.TryGetValue(b.Type, out var type))
             {
-                logger.LogWarning("Блок {BlockId} страницы {Path}: неизвестный тип «{Type}», пропущен", b.Id, page.Path, b.Type);
+                logger.LogWarning("Блок {BlockId} страницы {Path}: неизвестный тип «{Type}», пропущен", b.Id, path, b.Type);
                 continue;
             }
             try
@@ -77,10 +82,10 @@ public sealed class SiteStore(IDbContextFactory<SiteDbContext> dbFactory, SiteCa
             }
             catch (System.Text.Json.JsonException ex)
             {
-                logger.LogWarning(ex, "Блок {BlockId} страницы {Path}: не удалось прочитать настройки, пропущен", b.Id, page.Path);
+                logger.LogWarning(ex, "Блок {BlockId} страницы {Path}: не удалось прочитать настройки, пропущен", b.Id, path);
             }
         }
-        return new PublishedPage(page.Path, page.Title, page.Description, blocks);
+        return blocks;
     }
 
     private async Task<List<string>?> LoadPublishedPathsAsync(CancellationToken ct)
