@@ -326,8 +326,8 @@ public static class ScenarioEndpoints
             ? $"{what} «{s}»: нужно «ЧЧ:ММ», например 11:00."
             : window.Allows(t)
                 ? null
-                : $"{what} {t:HH\:mm} вне окна отправки {window} (настройки отправки). " +
-                  $"Выберите время с {window.From:hh\:mm} до {window.To.Add(TimeSpan.FromMinutes(-1)):hh\:mm}.";
+                : $"{what} {t.ToString("HH:mm", CultureInfo.InvariantCulture)} вне окна отправки {window} (настройки отправки). " +
+                  $"Выберите время с {window.From.ToString(@"hh\:mm")} до {window.To.Add(TimeSpan.FromMinutes(-1)).ToString(@"hh\:mm")}.";
 
     private static ScenarioDto ToDto(CareScenario s) => new(
         s.Id, s.Name, s.IsActive, s.Purpose, s.Trigger, s.NoVisitDays,
