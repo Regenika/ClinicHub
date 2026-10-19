@@ -4,6 +4,7 @@ using ClinicHub.Api.Background;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
 using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Integrations.Dikidi;
 using ClinicHub.Api.Modules.Messaging.Scenarios;
 using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Api.Services;
@@ -73,6 +74,13 @@ builder.Services.AddScoped<ScenarioPlanner>();
 builder.Services.AddScoped<IVisitCompletedHandler>(sp => sp.GetRequiredService<ScenarioPlanner>());
 builder.Services.AddScoped<ReminderDispatcher>();
 builder.Services.AddHostedService<ReminderWorker>();
+// Адаптер Dikidi (#15): только чтение журнала. Без логина и пароля в секретах — выключен.
+var dikidi = builder.Configuration.GetSection("Dikidi").Get<DikidiOptions>() ?? new DikidiOptions();
+builder.Services.AddSingleton(dikidi);
+builder.Services.AddSingleton(new DikidiSyncState { Configured = dikidi.IsConfigured });
+builder.Services.AddSingleton<IDikidiClient, DikidiWebClient>();
+builder.Services.AddScoped<DikidiSync>();
+builder.Services.AddHostedService<DikidiWorker>();
 builder.Services.AddHostedService<SchedulerWorker>();
 builder.Services.AddHostedService<AutoRuleWorker>();
 builder.Services.AddHostedService<LanDiscoveryService>();
@@ -165,6 +173,7 @@ app.MapAutoRulesEndpoints();
 app.MapMessageTemplatesEndpoints();
 app.MapCatalogEndpoints();
 app.MapVisitEndpoints();
+app.MapDikidiEndpoints();
 app.MapScenarioEndpoints();
 
 // Отладка: только с самого компьютера, где запущен сервер (в журнале есть номера и тексты SMS).
@@ -173,9 +182,9 @@ app.MapGet("/api/debug/log", (HttpContext ctx, int? tail) =>
         ? Results.Text(string.Join(Environment.NewLine, eventLog.Tail(tail ?? 300)), "text/plain; charset=utf-8")
         : Results.NotFound()).AllowAnonymous();
 
-app.MapGet("/api/debug/state", async (HttpContext ctx, ClinicHubDbContext db, CancellationToken ct) =>
+app.MapGet("/api/debug/state", async (HttpContext ctx, ClinicHubDbContext db, DikidiSyncState dikidiState, CancellationToken ct) =>
     IsLocal(ctx)
-        ? Results.Text(await DiagnosticsWorker.BuildAsync(db, detailed: true, ct), "text/plain; charset=utf-8")
+        ? Results.Text(await DiagnosticsWorker.BuildAsync(db, detailed: true, ct, dikidiState), "text/plain; charset=utf-8")
         : Results.NotFound()).AllowAnonymous();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }))
