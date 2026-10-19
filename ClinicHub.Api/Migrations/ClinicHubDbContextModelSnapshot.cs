@@ -746,6 +746,13 @@ namespace ClinicHub.Api.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Manual");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Phone");
