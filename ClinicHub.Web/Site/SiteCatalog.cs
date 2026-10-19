@@ -75,6 +75,7 @@ public sealed class DbSiteCatalog(IDbContextFactory<SiteDbContext> dbFactory, Db
                     Id = x.Key,
                     Name = x.Name,
                     Role = x.Role,
+                    PhotoId = x.PhotoId,
                     ServiceIds = x.Services.Select(ds => ds.Service.Key).ToList(),
                 })
                 .ToList();

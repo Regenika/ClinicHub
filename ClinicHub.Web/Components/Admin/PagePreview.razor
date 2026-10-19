@@ -20,7 +20,7 @@ else
 {
     @foreach (var block in preview.Blocks)
     {
-        <DynamicComponent @key="block.Id" Type="@block.Type.ComponentType" Parameters="@(new Dictionary<string, object> { ["Settings"] = block.Settings, ["Clinic"] = clinic })" />
+        <BlockHost @key="block.Id" Block="block" Clinic="clinic" />
     }
 }
 

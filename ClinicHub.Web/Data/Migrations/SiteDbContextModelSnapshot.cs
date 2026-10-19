@@ -44,6 +44,11 @@ namespace ClinicHub.Web.Data.Migrations
                     b.Property<int>("PageVersionId")
                         .HasColumnType("int");
 
+                    b.Property<string>("Style")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -80,6 +85,9 @@ namespace ClinicHub.Web.Data.Migrations
                     b.Property<int>("Order")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PhotoId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -92,6 +100,8 @@ namespace ClinicHub.Web.Data.Migrations
 
                     b.HasIndex("Key")
                         .IsUnique();
+
+                    b.HasIndex("PhotoId");
 
                     b.ToTable("CatalogDoctors", "site");
                 });
@@ -235,6 +245,65 @@ namespace ClinicHub.Web.Data.Migrations
                     b.ToTable("Editors", "site");
                 });
 
+            modelBuilder.Entity("ClinicHub.Web.Data.MediaFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Alt")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("FocusX")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FocusY")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Size")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("Zoom")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Sha256");
+
+                    b.ToTable("MediaFiles", "site");
+                });
+
             modelBuilder.Entity("ClinicHub.Web.Data.Page", b =>
                 {
                     b.Property<int>("Id")
@@ -313,10 +382,20 @@ namespace ClinicHub.Web.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AccentColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("nvarchar(7)");
+
                     b.Property<string>("Address")
                         .IsRequired()
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("BackgroundColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("nvarchar(7)");
 
                     b.Property<string>("BaseUrl")
                         .IsRequired()
@@ -383,6 +462,11 @@ namespace ClinicHub.Web.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("TextColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("nvarchar(7)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -415,6 +499,14 @@ namespace ClinicHub.Web.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("PageVersion");
+                });
+
+            modelBuilder.Entity("ClinicHub.Web.Data.CatalogDoctor", b =>
+                {
+                    b.HasOne("ClinicHub.Web.Data.MediaFile", null)
+                        .WithMany()
+                        .HasForeignKey("PhotoId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("ClinicHub.Web.Data.CatalogDoctorService", b =>

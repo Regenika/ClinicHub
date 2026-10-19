@@ -12,7 +12,11 @@
     var label = p.GetCustomAttribute<DisplayAttribute>()?.Name ?? p.Name;
     var hint = p.GetCustomAttribute<DisplayAttribute>()?.Description;
 
-    if (p.PropertyType == typeof(string) && p.Name == "PrimaryServiceId")
+    if (p.PropertyType == typeof(int?) && p.GetCustomAttribute<MediaImageAttribute>() is not null)
+    {
+        <MediaPicker Id="@id" Label="@label" Hint="@hint" Value="@((int?)p.GetValue(Model))" ValueChanged="@(v => p.SetValue(Model, v))" />
+    }
+    else if (p.PropertyType == typeof(string) && p.Name == "PrimaryServiceId")
     {
         <div class="field">
             <label for="@id">@label</label>

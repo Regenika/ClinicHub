@@ -7,7 +7,8 @@ namespace ClinicHub.Web.Site;
 /// <summary>Опубликованная страница, готовая к отрисовке: блоки уже разобраны из JSON.</summary>
 public sealed record PublishedPage(string Path, string Title, string Description, IReadOnlyList<RenderedBlock> Blocks);
 
-public sealed record RenderedBlock(int Id, BlockType Type, object Settings);
+/// <summary>Style — фон блока из палитры (Blocks/BlockStyles.cs), пусто — как задумано.</summary>
+public sealed record RenderedBlock(int Id, BlockType Type, object Settings, string Style = "");
 
 /// <summary>
 /// Чтение сайта из БД для публичных страниц. Живёт в пределах запроса: настройки читаются один раз,
@@ -78,7 +79,7 @@ public sealed class SiteStore(IDbContextFactory<SiteDbContext> dbFactory, SiteCa
             }
             try
             {
-                blocks.Add(new RenderedBlock(b.Id, type, type.Deserialize(b.Data)));
+                blocks.Add(new RenderedBlock(b.Id, type, type.Deserialize(b.Data), BlockStyles.Normalize(b.Style)));
             }
             catch (System.Text.Json.JsonException ex)
             {
@@ -118,5 +119,8 @@ public sealed class SiteStore(IDbContextFactory<SiteDbContext> dbFactory, SiteCa
         VkUrl = s.VkUrl,
         ProDoktorov = string.IsNullOrEmpty(s.ProDoktorovUrl) ? null : new RatingLink { Url = s.ProDoktorovUrl, Rating = s.ProDoktorovRating },
         YandexMaps = string.IsNullOrEmpty(s.YandexMapsUrl) ? null : new RatingLink { Url = s.YandexMapsUrl, Rating = s.YandexMapsRating },
+        AccentColor = s.AccentColor,
+        BackgroundColor = s.BackgroundColor,
+        TextColor = s.TextColor,
     };
 }

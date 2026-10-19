@@ -1,0 +1,34 @@
+@* Цвет палитры сайта: выбор из палитры браузера или код #RRGGBB. Пусто — цвет из дизайна. *@
+
+<div class="field">
+    <label for="@id">@Label</label>
+    <div class="color-field">
+        <input type="color" aria-label="@Label — выбрать" value="@(string.IsNullOrEmpty(Value) ? Default : Value)" @onchange="e => SetAsync(e.Value as string)" />
+        <input id="@id" type="text" spellcheck="false" maxlength="7" placeholder="@Default" value="@Value" @onchange="e => SetAsync(e.Value as string)" />
+        @if (!string.IsNullOrEmpty(Value))
+        {
+            <button type="button" class="btn btn--outline btn--sm" @onclick="() => SetAsync(string.Empty)">По умолчанию</button>
+        }
+    </div>
+    @if (!Theme.IsValid(Value))
+    {
+        <span class="validation-message">Нужен код вида #2E6A5A.</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public string Default { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    private readonly string id = "c-" + Guid.NewGuid().ToString("N")[..8];
+
+    private Task SetAsync(string? v)
+    {
+        v = (v ?? "").Trim();
+        // Цвет по умолчанию, выбранный в палитре, храним как «пусто»: тогда он поменяется вместе с дизайном.
+        if (string.Equals(v, Default, StringComparison.OrdinalIgnoreCase)) v = "";
+        return ValueChanged.InvokeAsync(v.ToUpperInvariant());
+    }
+}

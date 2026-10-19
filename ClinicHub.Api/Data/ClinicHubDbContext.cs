@@ -25,6 +25,13 @@ public class ClinicHubDbContext : DbContext
     public DbSet<AutoRuleFire> AutoRuleFires => Set<AutoRuleFire>();
     public DbSet<MessageTemplate> MessageTemplates => Set<MessageTemplate>();
 
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        // Все DateTime (и DateTime?) — моменты времени в UTC (ADR-0009).
+        // Календарные даты (дата рождения и т.п.) ниже переопределены на тип date.
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Пользователи
@@ -40,6 +47,7 @@ public class ClinicHubDbContext : DbContext
         {
             e.Property(p => p.FullName).HasMaxLength(200).IsRequired();
             e.Property(p => p.Phone).HasMaxLength(32).IsRequired();
+            e.Property(p => p.DateOfBirth).HasColumnType("date").HasConversion<DateOnlyDateTimeConverter>();
             e.HasIndex(p => p.Phone);
         });
 
@@ -120,6 +128,7 @@ public class ClinicHubDbContext : DbContext
         {
             e.HasOne(f => f.AutoRule).WithMany(r => r.Fires).HasForeignKey(f => f.AutoRuleId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(f => f.Patient).WithMany().HasForeignKey(f => f.PatientId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(f => f.FiredOnDate).HasColumnType("date").HasConversion<DateOnlyDateTimeConverter>();
             // Идемпотентность: одно и то же правило не срабатывает дважды за один день для одного пациента.
             e.HasIndex(f => new { f.AutoRuleId, f.PatientId, f.FiredOnDate }).IsUnique();
         });

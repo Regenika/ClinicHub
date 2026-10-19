@@ -21,12 +21,24 @@
             </ul>
         }
     </div>
-    <div class="photo-slot hero__photo" role="img" aria-label="Место для фотографии интерьера клиники или кабинета врача">@Settings.PhotoNote</div>
+    @if (hasPhoto)
+    {
+        <div class="hero__photo hero__photo--image"><MediaImg Id="Settings.PhotoId" CssClass="cover" Eager="true" /></div>
+    }
+    else
+    {
+        <div class="photo-slot hero__photo" role="img" aria-label="Место для фотографии интерьера клиники или кабинета врача">@Settings.PhotoNote</div>
+    }
 </section>
 
 @code {
     [Parameter, EditorRequired] public HeroBlock Settings { get; set; } = default!;
     [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    [Inject] private MediaLibrary Media { get; set; } = default!;
+    private bool hasPhoto;
+
+    protected override async Task OnParametersSetAsync() => hasPhoto = await MediaImg.ExistsAsync(Media, Settings.PhotoId);
 
     private string PrimaryHref => string.IsNullOrEmpty(Settings.PrimaryServiceId)
         ? "/zapis"

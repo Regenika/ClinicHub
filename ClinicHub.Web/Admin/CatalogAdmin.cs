@@ -43,6 +43,9 @@ public sealed class DoctorForm
     [StringLength(300, ErrorMessage = "Специальность — до 300 символов.")]
     public string? Role { get; set; }
 
+    /// <summary>Фото из медиатеки.</summary>
+    public int? PhotoId { get; set; }
+
     public bool IsVisible { get; set; } = true;
 
     /// <summary>Id услуг, которые ведёт врач. Пусто — все.</summary>
@@ -164,7 +167,7 @@ public sealed class CatalogAdmin(IDbContextFactory<SiteDbContext> dbFactory, Sit
         var d = await db.CatalogDoctors.AsNoTracking().Include(x => x.Services).FirstOrDefaultAsync(x => x.Id == id);
         return d is null ? null : new DoctorForm
         {
-            Id = d.Id, Key = d.Key, Name = d.Name, Role = d.Role, IsVisible = d.IsVisible,
+            Id = d.Id, Key = d.Key, Name = d.Name, Role = d.Role, PhotoId = d.PhotoId, IsVisible = d.IsVisible,
             ServiceIds = d.Services.Select(x => x.ServiceId).ToHashSet(),
         };
     }
@@ -192,6 +195,7 @@ public sealed class CatalogAdmin(IDbContextFactory<SiteDbContext> dbFactory, Sit
 
         d.Name = f.Name.Trim();
         d.Role = f.Role?.Trim() ?? "";
+        d.PhotoId = f.PhotoId;
         d.IsVisible = f.IsVisible;
         d.UpdatedAt = clock.GetUtcNow().UtcDateTime;
         d.Services.RemoveAll(x => !f.ServiceIds.Contains(x.ServiceId));
