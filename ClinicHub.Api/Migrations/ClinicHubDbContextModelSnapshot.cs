@@ -242,6 +242,182 @@ namespace ClinicHub.Api.Migrations
                     b.ToTable("ServiceCategories", "catalog");
                 });
 
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenario", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("NoVisitDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CareScenarios");
+                });
+
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenarioService", b =>
+                {
+                    b.Property<int>("ScenarioId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ServiceId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("ScenarioId", "ServiceId");
+
+                    b.HasIndex("ServiceId");
+
+                    b.ToTable("CareScenarioService");
+                });
+
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenarioStep", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("CancelIfFutureVisit")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("CancelIfServiceAfterId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("CancelIfVisitAfter")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("OffsetDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ScenarioId")
+                        .HasColumnType("int");
+
+                    b.Property<TimeSpan>("SendTime")
+                        .HasColumnType("time");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScenarioId");
+
+                    b.ToTable("CareScenarioSteps");
+                });
+
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.PlannedReminder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("DueAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("EventAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<int?>("RequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ScenarioId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("StatusReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int?>("StepId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("TriggerVisitId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StepId");
+
+                    b.HasIndex("PatientId", "Status");
+
+                    b.HasIndex("ScenarioId", "PatientId");
+
+                    b.HasIndex("Status", "DueAt");
+
+                    b.ToTable("PlannedReminders");
+                });
+
             modelBuilder.Entity("ClinicHub.Api.Modules.Visits.ExternalServiceMap", b =>
                 {
                     b.Property<int>("Id")
@@ -975,6 +1151,59 @@ namespace ClinicHub.Api.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenarioService", b =>
+                {
+                    b.HasOne("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenario", "Scenario")
+                        .WithMany("TriggerServices")
+                        .HasForeignKey("ScenarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ClinicHub.Api.Modules.Catalog.Service", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Scenario");
+                });
+
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenarioStep", b =>
+                {
+                    b.HasOne("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenario", "Scenario")
+                        .WithMany("Steps")
+                        .HasForeignKey("ScenarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Scenario");
+                });
+
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.PlannedReminder", b =>
+                {
+                    b.HasOne("ClinicHub.Core.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenario", "Scenario")
+                        .WithMany()
+                        .HasForeignKey("ScenarioId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenarioStep", "Step")
+                        .WithMany()
+                        .HasForeignKey("StepId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Scenario");
+
+                    b.Navigation("Step");
+                });
+
             modelBuilder.Entity("ClinicHub.Api.Modules.Visits.ExternalServiceMap", b =>
                 {
                     b.HasOne("ClinicHub.Api.Modules.Catalog.Service", null)
@@ -1162,6 +1391,13 @@ namespace ClinicHub.Api.Migrations
             modelBuilder.Entity("ClinicHub.Api.Modules.Catalog.ServiceCategory", b =>
                 {
                     b.Navigation("Services");
+                });
+
+            modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenario", b =>
+                {
+                    b.Navigation("Steps");
+
+                    b.Navigation("TriggerServices");
                 });
 
             modelBuilder.Entity("ClinicHub.Api.Modules.Visits.Visit", b =>
