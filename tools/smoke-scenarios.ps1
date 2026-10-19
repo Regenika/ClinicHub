@@ -53,8 +53,11 @@ function Call([string]$Method, [string]$Path, $Body = $null, [int]$Expect = 200,
         $script:failed++
         Write-Host ("FAIL  {0} -> {1}, ожидалось {2}. Ответ: {3}" -f $label, $status, $Expect, $content) -ForegroundColor Red
     }
-    if ($content -and $content.TrimStart().StartsWith("{") -or $content.TrimStart().StartsWith("[")) {
-        return $content | ConvertFrom-Json
+    if ($content -and ($content.TrimStart().StartsWith("{") -or $content.TrimStart().StartsWith("["))) {
+        # Windows PowerShell 5.1: «return ... | ConvertFrom-Json» отдаёт JSON-массив одним объектом, и @(Call ...)
+        # превращается в массив из одного массива. Через переменную return разворачивает его как положено.
+        $parsed = $content | ConvertFrom-Json
+        return $parsed
     }
     return $null
 }
