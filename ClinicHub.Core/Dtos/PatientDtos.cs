@@ -12,6 +12,9 @@ public class PatientDto
     public int? Age { get; set; }
     public bool IsSubscribed { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>Последний состоявшийся визит (UTC), только для чтения.</summary>
+    public DateTime? LastVisitAt { get; set; }
 }
 
 public class PatientInputDto

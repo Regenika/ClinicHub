@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 using ClinicHub.Api.Background;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
+using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +65,7 @@ builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<SchedulerService>();
 builder.Services.AddScoped<WebhookNotifier>();
 builder.Services.AddScoped<AutoRuleService>();
+builder.Services.AddScoped<VisitEvents>(); // подписчики IVisitCompletedHandler регистрируются модулями (сценарии — #14)
 builder.Services.AddHostedService<SchedulerWorker>();
 builder.Services.AddHostedService<AutoRuleWorker>();
 builder.Services.AddHostedService<LanDiscoveryService>();
@@ -153,6 +156,8 @@ app.MapWebhookEndpoints();
 app.MapDashboardEndpoints();
 app.MapAutoRulesEndpoints();
 app.MapMessageTemplatesEndpoints();
+app.MapCatalogEndpoints();
+app.MapVisitEndpoints();
 
 // Отладка: только с самого компьютера, где запущен сервер (в журнале есть номера и тексты SMS).
 app.MapGet("/api/debug/log", (HttpContext ctx, int? tail) =>

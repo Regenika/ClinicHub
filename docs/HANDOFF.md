@@ -18,6 +18,33 @@
 | Ветка | Кто | Меняет схему БД? | Суть |
 |---|---|---|---|
 | feature/api-postgres | AlDanosAl | **да** (миграция `CalendarDateColumns`) | PLAN 1.1 на SQL Server (ADR-0009, Issue #18): секреты, пароль админа, UTC. PR в `master` на ревью. Пока не принята, миграции сервера никто другой не трогает |
+| feature/catalog-visits | AlDanosAl | **да** (миграция `CatalogAndVisits`: схема `catalog`, таблицы визитов, `Patients.LastVisitAt`) | PLAN 1.8–1.9, Issue #13. Ветка от `feature/api-postgres`, PR на ревью |
+
+---
+
+## 2026-10-18 — AlDanosAl (сессия Claude) — ветка feature/catalog-visits
+
+**Сделано (Issue #13, PLAN 1.8–1.9):**
+- Модуль `ClinicHub.Api/Modules/Catalog` (схема `catalog`): `ServiceCategory`, `Service` (slug-id), `Doctor`, `DoctorService`, `PriceHistory`; поля `Source`/`ExternalId`/`SyncedAt` под синхронизацию с МИС.
+  - `/api/catalog/{services,doctors,categories}` — для сайта без входа, только видимое (услуга из скрытой категории тоже скрыта).
+  - `/api/catalog/admin/...` — правка, роль Admin. Каждое изменение цены пишется в `PriceHistory`. История без внешнего ключа и переживает удаление услуги.
+  - Услугу из визитов или сопоставлений удалить нельзя (409, предлагаем скрыть).
+  - Сид при пустом каталоге: 6 услуг и руководитель клиники из `site-content.json`, без заглушек.
+- Модуль `ClinicHub.Api/Modules/Visits`: `Visit` (снимок имени врача), `VisitService` (снимок названия услуги), статусы Planned/Completed/NoShow/Cancelled, `ExternalServiceMap`.
+  - API: ручная запись, «визит состоялся» с процедурами (не раньше чем за час до начала), неявка, отмена, визиты пациента, визиты за день по Москве, сопоставление внешних услуг (Admin).
+  - `Patient.LastVisitAt` по последнему Completed (есть и в `PatientDto`).
+  - Событие «визит завершён»: `IVisitCompletedHandler` + `VisitEvents`. Подписчиков пока нет, #14 регистрирует свой в DI.
+- Миграция `20261019122437_CatalogAndVisits` (пересоздана 19.10 вместе с моделью цены, одна на весь PR).
+- Цена по решению Свята (#26, ADR-0007 §2): `PriceFrom`/`PriceTo` — числа, `PriceDisplay` (From / Exact / Range / OnRequest / Free), `PriceUnit` до 30 символов без цифр. Сервер собирает `priceText` («от 4 000 до 6 000 ₽ за зону», «по запросу»). `PriceHistory` пишет изменения «от», «до» и способа показа.
+- `ClinicHub.Api.http` — все запросы. Пароль — в `http-client.env.json.user` (в .gitignore).
+- `tools/smoke-catalog-visits.ps1` — прогон всех проверок с уборкой, включая способы показа цены. У AlDanosAl на LocalDB 19.10 всё прошло, цепочка миграций проверена на чистой базе.
+
+**Не доделано / в работе:** PR ждёт ревью и принятия #20 (ветка стоит на ней). Экраны — в веб-админке (1.12).
+**Следующие шаги:** #14 (сценарии) подписывается на `IVisitCompletedHandler`. #15 (Dikidi) создаёт `Visit` с `Source = Dikidi` и использует `ExternalServiceMap`. Сайт (4.6) берёт услуги и врачей из `/api/catalog/*`.
+**Известные проблемы:**
+- В миграции для уникальных индексов по `ExternalId` EF сам добавил фильтр `[ExternalId] IS NOT NULL` (синтаксис SQL Server). При переходе на PostgreSQL миграции пересоздаются (1.13), там фильтр не нужен.
+- Временный каталог сайта (`site.Catalog*`, #22–#23) хранит цену строкой. При переходе сайта на `/api/catalog/*` (4.6) брать `priceText` из API.
+**Решения:** — (по ADR-0007, ADR-0008, ADR-0009)
 
 ---
 

@@ -9,5 +9,9 @@ public class Patient
     public DateTime? DateOfBirth { get; set; }
     public bool IsSubscribed { get; set; } = true;
     public string? Notes { get; set; }
+
+    /// <summary>Начало последнего состоявшегося визита (UTC). Пересчитывается модулем Visits.</summary>
+    public DateTime? LastVisitAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

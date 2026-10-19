@@ -1,3 +1,5 @@
+using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +26,18 @@ public class ClinicHubDbContext : DbContext
     public DbSet<AutoRule> AutoRules => Set<AutoRule>();
     public DbSet<AutoRuleFire> AutoRuleFires => Set<AutoRuleFire>();
     public DbSet<MessageTemplate> MessageTemplates => Set<MessageTemplate>();
+
+    // Модуль Catalog (схема catalog, ADR-0007 §2, ADR-0008 §2)
+    public DbSet<ServiceCategory> ServiceCategories => Set<ServiceCategory>();
+    public DbSet<Service> Services => Set<Service>();
+    public DbSet<Doctor> Doctors => Set<Doctor>();
+    public DbSet<DoctorService> DoctorServices => Set<DoctorService>();
+    public DbSet<PriceHistory> PriceHistory => Set<PriceHistory>();
+
+    // Модуль Visits (ADR-0008 §1)
+    public DbSet<Visit> Visits => Set<Visit>();
+    public DbSet<VisitService> VisitServices => Set<VisitService>();
+    public DbSet<ExternalServiceMap> ExternalServiceMaps => Set<ExternalServiceMap>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -138,5 +152,9 @@ public class ClinicHubDbContext : DbContext
         {
             e.Property(t => t.Name).HasMaxLength(200).IsRequired();
         });
+
+        // Модули: каждый описывает свои таблицы сам.
+        CatalogModel.Configure(modelBuilder);
+        VisitModel.Configure(modelBuilder);
     }
 }
