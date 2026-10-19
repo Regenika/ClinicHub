@@ -289,6 +289,84 @@ Authorization: Bearer {{token}}
 DELETE {{host}}/api/catalog/admin/services/test-botox
 Authorization: Bearer {{token}}
 
+### ── Сценарии напоминаний (Issue #14) ─────────────────────────────────────
+### ВНИМАНИЕ: этот блок доводит напоминание до настоящей заявки на SMS. Используйте СВОЙ номер:
+### пациент «Я (тестовый получатель)» создаётся сервером из Seed:MyPhone. Его id — в {{myPatientId}}
+### (впишите в http-client.env.json.user: { "dev": { "adminPassword": "...", "myPatientId": 1 } }).
+
+### Сценарии (примеры из ADR-0008 созданы выключенными)
+GET {{host}}/api/scenarios
+Authorization: Bearer {{token}}
+
+### Сценарий «контроль через 14 дней» после консультации. Время — по Москве, 09:00–20:59.
+# @name scenario
+POST {{host}}/api/scenarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "test: контроль через 14 дней",
+  "purpose": "Service",
+  "trigger": "VisitCompleted",
+  "triggerServiceIds": [ "consultation" ],
+  "steps": [
+    { "order": 1, "offsetDays": 14, "sendTime": "11:00", "text": "{name}, пора на контрольный осмотр", "cancelIfFutureVisit": true }
+  ]
+}
+
+### Визит час назад со своим номером
+# @name myVisit
+POST {{host}}/api/visits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "patientId": {{myPatientId}}, "startAt": "{{$datetime iso8601 -1 h}}", "serviceIds": [ "consultation" ] }
+
+### Что запланируется, если подтвердить визит (ничего не сохраняет)
+POST {{host}}/api/scenarios/preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "visitId": {{myVisit.response.body.$.id}} }
+
+### Подтверждаем визит — планировщик создаёт напоминание
+POST {{host}}/api/visits/{{myVisit.response.body.$.id}}/complete
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ }
+
+### Напоминания пациента
+# @name myReminders
+GET {{host}}/api/reminders?patientId={{myPatientId}}
+Authorization: Bearer {{token}}
+
+### Сдвигаем срок в прошлое — в течение минуты воркер создаст заявку (не в окно тишины 21:00–9:00 МСК)
+PUT {{host}}/api/reminders/{{myReminders.response.body.$[0].id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "dueAt": "{{$datetime iso8601 -1 m}}" }
+
+### Через минуту: статус Sent и requestId — номер заявки в «Заявках» Admin
+GET {{host}}/api/reminders?patientId={{myPatientId}}
+Authorization: Bearer {{token}}
+
+### Ручное напоминание: через 3 дня в 10:30 по Москве
+POST {{host}}/api/reminders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "patientId": {{myPatientId}}, "inDays": 3, "time": "10:30", "text": "{name}, ручное напоминание" }
+
+### Все запланированные
+GET {{host}}/api/reminders?status=Planned
+Authorization: Bearer {{token}}
+
+### Удалить тестовый сценарий (его запланированные напоминания отменятся)
+DELETE {{host}}/api/scenarios/{{scenario.response.body.$.id}}
+Authorization: Bearer {{token}}
+
 ### ── Уборка тестовых данных ─────────────────────────────────────────────────
 
 DELETE {{host}}/api/visits/service-map/{{map.response.body.$.id}}

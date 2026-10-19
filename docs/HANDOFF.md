@@ -19,6 +19,7 @@
 |---|---|---|---|
 | feature/api-postgres | AlDanosAl | **да** (миграция `CalendarDateColumns`) | PLAN 1.1 на SQL Server (ADR-0009, Issue #18): секреты, пароль админа, UTC. PR в `master` на ревью. Пока не принята, миграции сервера никто другой не трогает |
 | feature/catalog-visits | AlDanosAl | **да** (миграция `CatalogAndVisits`: схема `catalog`, таблицы визитов, `Patients.LastVisitAt`) | PLAN 1.8–1.9, Issue #13. Ветка от `feature/api-postgres`, PR на ревью |
+| feature/care-scenarios | AlDanosAl | **да** (таблицы сценариев и напоминаний) | PLAN 1.10, Issue #14. Ветка от `feature/catalog-visits` (#26), PR после неё |
 
 ---
 

@@ -1,4 +1,5 @@
 using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Messaging.Scenarios;
 using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +39,11 @@ public class ClinicHubDbContext : DbContext
     public DbSet<Visit> Visits => Set<Visit>();
     public DbSet<VisitService> VisitServices => Set<VisitService>();
     public DbSet<ExternalServiceMap> ExternalServiceMaps => Set<ExternalServiceMap>();
+
+    // Сценарии напоминаний (ADR-0008 §3–4)
+    public DbSet<CareScenario> CareScenarios => Set<CareScenario>();
+    public DbSet<CareScenarioStep> CareScenarioSteps => Set<CareScenarioStep>();
+    public DbSet<PlannedReminder> PlannedReminders => Set<PlannedReminder>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -156,5 +162,6 @@ public class ClinicHubDbContext : DbContext
         // Модули: каждый описывает свои таблицы сам.
         CatalogModel.Configure(modelBuilder);
         VisitModel.Configure(modelBuilder);
+        ScenarioModel.Configure(modelBuilder);
     }
 }
