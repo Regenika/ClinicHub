@@ -84,6 +84,8 @@ $env:NUGET_PACKAGES = Join-Path $Root "nuget"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
 $env:DOTNET_NOLOGO = "1"
 $env:GIT_TERMINAL_PROMPT = "0"
+# git пишет в UTF-8; без этого заголовки коммитов в журнале — кракозябры.
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 function Git {
     $out = & git.exe -C $Src -c "safe.directory=$($Src.Replace('\', '/'))" @args 2>&1
