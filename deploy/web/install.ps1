@@ -13,10 +13,14 @@
 #   5. Проверяет, что сайт отвечает, и кладёт ярлык на рабочий стол.
 #
 # Версии до 2026-10 ставили сайт задачей планировщика под SYSTEM — такая задача удаляется автоматически.
+#
+# -Unattended — без вопросов и «Нажмите Enter», без открытия браузера; итог — код выхода (0 — успех).
+# Так установщик запускает автообновление (auto-update.ps1).
 
 param(
     [int]$Port = 8080,
-    [string]$InstallDir = "C:\ClinicHub\Web"
+    [string]$InstallDir = "C:\ClinicHub\Web",
+    [switch]$Unattended
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,7 +37,7 @@ function Step($text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cy
 function Fail($text) {
     Write-Host ""
     Write-Host "ОШИБКА: $text" -ForegroundColor Red
-    Read-Host "Нажмите Enter, чтобы закрыть окно"
+    if (-not $Unattended) { Read-Host "Нажмите Enter, чтобы закрыть окно" }
     exit 1
 }
 
@@ -41,9 +45,14 @@ function Fail($text) {
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    Start-Process powershell.exe -Verb RunAs -ArgumentList @(
-        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"",
+    $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"",
         "-Port", $Port, "-InstallDir", "`"$InstallDir`"")
+    if ($Unattended) {
+        # Без окна: ждём окончания и возвращаем код выхода установки.
+        $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList ($elevatedArgs + "-Unattended")
+        exit $p.ExitCode
+    }
+    Start-Process powershell.exe -Verb RunAs -ArgumentList $elevatedArgs
     exit
 }
 
@@ -155,6 +164,42 @@ if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
     New-EventLog -LogName Application -Source $EventSource
 }
 
+# ── Порт ─────────────────────────────────────────────────────────────────────
+# Hyper-V, WSL и Docker (служба WinNAT) после перезагрузки резервируют за собой случайные диапазоны портов. Если порт сайта
+# попал в такой диапазон, служба не стартует («порт занят», так было на Valsot-PC 2026-10-20). Поэтому закрепляем порт
+# за сайтом своей резервацией: её Windows не раздаёт другим, а слушать порт сайту она не мешает.
+function Get-PortExclusion([string]$family) {
+    # "administered" — наша резервация (в выводе netsh со звёздочкой), "system" — диапазон, который взяла Windows, $null — свободен.
+    foreach ($line in (& netsh.exe int $family show excludedportrange protocol=tcp)) {
+        if ($line -match '^\s*(\d+)\s+(\d+)(\s+\*)?\s*$' -and $Port -ge [int]$Matches[1] -and $Port -le [int]$Matches[2]) {
+            if ($Matches[3]) { return "administered" } else { return "system" }
+        }
+    }
+    return $null
+}
+Step "Закрепляю порт $Port за сайтом"
+$families = @("ipv4", "ipv6")
+$missing = @($families | Where-Object { (Get-PortExclusion $_) -ne "administered" })
+if ($missing.Count -gt 0) {
+    # Диапазон, который уже взяла Windows, освобождается только остановкой WinNAT; после запуска она возьмёт другие порты.
+    $winnat = Get-Service winnat -ErrorAction SilentlyContinue
+    $restartWinnat = $winnat -and $winnat.Status -eq "Running" -and @($missing | Where-Object { (Get-PortExclusion $_) -eq "system" }).Count -gt 0
+    if ($restartWinnat) {
+        Write-Host "Порт попал в резерв Windows (WinNAT) — перезапускаю WinNAT, чтобы его освободить."
+        Stop-Service winnat -Force
+    }
+    try {
+        foreach ($f in $missing) {
+            # Обычно список у ipv4 и ipv6 общий: после ipv4 порт уже закреплён и для ipv6, повторное добавление — ошибка.
+            if ((Get-PortExclusion $f) -eq "administered") { continue }
+            $out = & netsh.exe int $f add excludedportrange protocol=tcp startport=$Port numberofports=1 store=persistent 2>&1
+            if ($LASTEXITCODE -ne 0) { Fail "Не удалось закрепить порт $Port ($f): $out" }
+        }
+    } finally {
+        if ($restartWinnat) { Start-Service winnat }
+    }
+}
+
 # ── Служба ───────────────────────────────────────────────────────────────────
 Step "Настраиваю автозапуск (служба Windows «$ServiceName»)"
 # http://* — и IPv4, и IPv6: иначе localhost (сначала ::1) отвечает с задержкой в 2 секунды.
@@ -242,6 +287,7 @@ if ($publicNets.Count -gt 0) {
 }
 Write-Host ""
 Write-Host "Журнал работы сайта: $logsDir"
+if ($Unattended) { exit 0 }
 Write-Host ""
 Write-Host "Если сайт ещё не подключён к базе данных, в браузере откроется страница подключения:" -ForegroundColor Cyan
 Write-Host "  ${local}nastroika-bd — укажите сервер SQL Server, логин и пароль." -ForegroundColor Cyan
