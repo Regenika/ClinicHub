@@ -367,6 +367,28 @@ Authorization: Bearer {{token}}
 DELETE {{host}}/api/scenarios/{{scenario.response.body.$.id}}
 Authorization: Bearer {{token}}
 
+### ── Dikidi, только чтение (#15) ───────────────────────────────────────────
+# Работает, только если в user-secrets заданы Dikidi:Phone, Dikidi:Password, Dikidi:CompanyId.
+
+### Состояние адаптера: последняя синхронизация, ошибка, счётчики
+GET {{host}}/api/integrations/dikidi/status
+Authorization: Bearer {{token}}
+
+### Услуги из Dikidi, которых нет в сопоставлении с каталогом
+GET {{host}}/api/integrations/dikidi/unmapped-services
+Authorization: Bearer {{token}}
+
+### Сопоставить услугу Dikidi с каталогом (название — как в списке выше)
+PUT {{host}}/api/visits/service-map
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "source": "Dikidi", "externalKey": "НАЗВАНИЕ_ИЗ_СПИСКА", "serviceId": "consultation" }
+
+### Синхронизировать сейчас
+POST {{host}}/api/integrations/dikidi/sync
+Authorization: Bearer {{token}}
+
 ### ── Уборка тестовых данных ─────────────────────────────────────────────────
 
 DELETE {{host}}/api/visits/service-map/{{map.response.body.$.id}}

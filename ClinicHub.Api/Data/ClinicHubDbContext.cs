@@ -68,6 +68,10 @@ public class ClinicHubDbContext : DbContext
             e.Property(p => p.FullName).HasMaxLength(200).IsRequired();
             e.Property(p => p.Phone).HasMaxLength(32).IsRequired();
             e.Property(p => p.DateOfBirth).HasColumnType("date").HasConversion<DateOnlyDateTimeConverter>();
+            // Значение по умолчанию в БД — для уже существующих строк при добавлении колонки (будут Manual).
+            // Sentinel вне диапазона enum: EF всегда пишет значение из кода и не путает Manual с «не задано».
+            e.Property(p => p.Source).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(PatientSource.Manual).HasSentinel((PatientSource)(-1));
             e.HasIndex(p => p.Phone);
         });
 

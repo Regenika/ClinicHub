@@ -33,6 +33,16 @@ dotnet user-secrets set "Jwt:Secret" "<случайная строка не ко
 На сервере клиники вместо user-secrets задаются переменные окружения: `ConnectionStrings__ClinicHub`, `Jwt__Secret`.
 Без строки подключения сервер не запустится, без `Jwt:Secret` — запустится только в режиме разработки (со случайным ключом до перезапуска).
 
+Адаптер журнала Dikidi (только чтение, Issue #15) включается, когда заданы все три значения:
+
+```powershell
+dotnet user-secrets set "Dikidi:Phone" "+7..."
+dotnet user-secrets set "Dikidi:Password" "..."
+dotnet user-secrets set "Dikidi:CompanyId" "<число из адреса журнала ...?company=>"
+```
+
+На сервере — `Dikidi__Phone`, `Dikidi__Password`, `Dikidi__CompanyId`. Состояние адаптера видно в `/api/debug/state` и `GET /api/integrations/dikidi/status`.
+
 ### 1.3. Запуск
 
 ```powershell
