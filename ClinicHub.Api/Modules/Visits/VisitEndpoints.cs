@@ -3,6 +3,7 @@ using System.Text.Json;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
 using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
@@ -299,27 +300,4 @@ public static class VisitEndpoints
         v.Id, v.PatientId, v.Patient?.FullName, v.StartAt, v.DoctorId, v.DoctorName, v.Status, v.Source, v.ExternalId,
         v.Comment, v.ConfirmedById, v.ConfirmedAt,
         v.Services.OrderBy(s => s.ServiceName).Select(s => new VisitServiceDto(s.ServiceId, s.ServiceName)).ToList());
-}
-
-/// <summary>Границы дня по Москве в UTC. Как и в ClinicHub.Web, с запасными вариантами для Windows без ICU.</summary>
-internal static class MoscowTime
-{
-    private static readonly TimeZoneInfo Zone = Find();
-
-    private static TimeZoneInfo Find()
-    {
-        foreach (var id in new[] { "Europe/Moscow", "Russian Standard Time" })
-        {
-            if (TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone))
-                return zone;
-        }
-        return TimeZoneInfo.CreateCustomTimeZone("MSK", TimeSpan.FromHours(3), "Москва", "Москва");
-    }
-
-    public static (DateTime FromUtc, DateTime ToUtc) DayRangeUtc(DateOnly day)
-    {
-        var start = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
-        var end = day.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
-        return (TimeZoneInfo.ConvertTimeToUtc(start, Zone), TimeZoneInfo.ConvertTimeToUtc(end, Zone));
-    }
 }

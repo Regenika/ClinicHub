@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="ClinicHub.Admin/ClinicHub.Admin.csproj" />
   <Project Path="ClinicHub.Api/ClinicHub.Api.csproj" />
+  <Project Path="ClinicHub.Api.Tests/ClinicHub.Api.Tests.csproj" />
   <Project Path="ClinicHub.Core/ClinicHub.Core.csproj" />
   <Project Path="ClinicHub.SmsAgent/ClinicHub.SmsAgent.csproj" />
   <Project Path="ClinicHub.Web/ClinicHub.Web.csproj" />

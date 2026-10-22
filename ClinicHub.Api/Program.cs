@@ -4,6 +4,7 @@ using ClinicHub.Api.Background;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
 using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Messaging.Scenarios;
 using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -65,7 +66,13 @@ builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<SchedulerService>();
 builder.Services.AddScoped<WebhookNotifier>();
 builder.Services.AddScoped<AutoRuleService>();
-builder.Services.AddScoped<VisitEvents>(); // подписчики IVisitCompletedHandler регистрируются модулями (сценарии — #14)
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<VisitEvents>();
+// Сценарии напоминаний (#14): планировщик подписан на «визит завершён», отправка — фоновым воркером.
+builder.Services.AddScoped<ScenarioPlanner>();
+builder.Services.AddScoped<IVisitCompletedHandler>(sp => sp.GetRequiredService<ScenarioPlanner>());
+builder.Services.AddScoped<ReminderDispatcher>();
+builder.Services.AddHostedService<ReminderWorker>();
 builder.Services.AddHostedService<SchedulerWorker>();
 builder.Services.AddHostedService<AutoRuleWorker>();
 builder.Services.AddHostedService<LanDiscoveryService>();
@@ -158,6 +165,7 @@ app.MapAutoRulesEndpoints();
 app.MapMessageTemplatesEndpoints();
 app.MapCatalogEndpoints();
 app.MapVisitEndpoints();
+app.MapScenarioEndpoints();
 
 // Отладка: только с самого компьютера, где запущен сервер (в журнале есть номера и тексты SMS).
 app.MapGet("/api/debug/log", (HttpContext ctx, int? tail) =>
