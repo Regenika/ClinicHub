@@ -1,0 +1,61 @@
+# Автопроверка (Issue #42): сервер, сайт, тесты и модель EF — на каждый PR и push в master.
+# Приложения MAUI (Admin, SmsAgent) проверяет отдельный ci-apps.yml: Windows дороже и дольше, поэтому только при их изменении.
+# Секретов здесь нет и быть не должно: тесты работают на EF InMemory, проверка модели в базу не ходит.
+name: Проверка
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  server:
+    name: Сервер, сайт и тесты
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Кэш пакетов NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-linux-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-linux-
+
+      - name: Сборка (Core, Api, Web, Tests)
+        run: |
+          dotnet build ClinicHub.Api.Tests/ClinicHub.Api.Tests.csproj
+          dotnet build ClinicHub.Web/ClinicHub.Web.csproj
+
+      - name: Тесты
+        run: dotnet test ClinicHub.Api.Tests/ClinicHub.Api.Tests.csproj --no-build --logger "console;verbosity=normal"
+
+      - name: Установка dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 10.0.*
+
+      # Если кто-то поменял сущности или их настройку, а миграцию не создал, — проверка красная.
+      - name: Модель EF сервера совпадает с миграциями
+        run: dotnet ef migrations has-pending-model-changes --project ClinicHub.Api --no-build
+
+      # У сайта своя схема (site) и свои миграции — проверяем, когда они есть в ветке.
+      - name: Модель EF сайта совпадает с миграциями
+        if: hashFiles('ClinicHub.Web/Migrations/*.cs') != ''
+        run: dotnet ef migrations has-pending-model-changes --project ClinicHub.Web --no-build

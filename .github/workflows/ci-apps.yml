@@ -1,0 +1,62 @@
+# Автопроверка приложений MAUI (Issue #42): программа администратора и SmsAgent.
+# Только Windows умеет собрать их под Windows; под Android собираем там же. iOS и macOS клинике не нужны — не собираем.
+# Запускается, только если менялись сами приложения, общий Core или эта проверка, и на push в master.
+name: Проверка приложений
+
+on:
+  pull_request:
+    paths:
+      - ClinicHub.Admin/**
+      - ClinicHub.SmsAgent/**
+      - ClinicHub.Core/**
+      - ClinicHub.slnx
+      - .github/workflows/ci-apps.yml
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-apps-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  apps:
+    name: Admin и SmsAgent (Windows, Android)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Кэш пакетов NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-windows-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-windows-
+
+      - name: Нагрузка MAUI (Android и Windows)
+        run: dotnet workload install maui-android maui-windows
+
+      - name: Admin под Windows
+        run: dotnet build ClinicHub.Admin/ClinicHub.Admin.csproj -f net10.0-windows10.0.19041.0
+
+      - name: SmsAgent под Windows
+        run: dotnet build ClinicHub.SmsAgent/ClinicHub.SmsAgent.csproj -f net10.0-windows10.0.19041.0
+
+      - name: Admin под Android
+        run: dotnet build ClinicHub.Admin/ClinicHub.Admin.csproj -f net10.0-android -p:AcceptAndroidSDKLicenses=True
+
+      - name: SmsAgent под Android
+        run: dotnet build ClinicHub.SmsAgent/ClinicHub.SmsAgent.csproj -f net10.0-android -p:AcceptAndroidSDKLicenses=True
