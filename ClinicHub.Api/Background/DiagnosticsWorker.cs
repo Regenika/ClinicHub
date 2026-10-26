@@ -1,5 +1,6 @@
 using System.Text;
 using ClinicHub.Api.Data;
+using ClinicHub.Api.Modules.Integrations.Dikidi;
 using ClinicHub.Api.Services;
 using ClinicHub.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -14,12 +15,14 @@ public class DiagnosticsWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopes;
     private readonly EventLog _log;
+    private readonly DikidiSyncState _dikidi;
     private string _last = "";
 
-    public DiagnosticsWorker(IServiceScopeFactory scopes, EventLog log)
+    public DiagnosticsWorker(IServiceScopeFactory scopes, EventLog log, DikidiSyncState dikidi)
     {
         _scopes = scopes;
         _log = log;
+        _dikidi = dikidi;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -32,7 +35,7 @@ public class DiagnosticsWorker : BackgroundService
             {
                 using var scope = _scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<ClinicHubDbContext>();
-                var text = await BuildAsync(db, detailed: false, ct);
+                var text = await BuildAsync(db, detailed: false, ct, _dikidi);
                 if (text != _last)
                 {
                     _last = text;
@@ -53,7 +56,7 @@ public class DiagnosticsWorker : BackgroundService
     }
 
     /// <summary>detailed = true добавляет «сколько секунд назад» (для страницы /api/debug/state); в журнал это не пишется, иначе строка менялась бы каждый раз.</summary>
-    public static async Task<string> BuildAsync(ClinicHubDbContext db, bool detailed, CancellationToken ct)
+    public static async Task<string> BuildAsync(ClinicHubDbContext db, bool detailed, CancellationToken ct, DikidiSyncState? dikidi = null)
     {
         var sb = new StringBuilder();
         var now = DateTime.UtcNow;
@@ -109,6 +112,9 @@ public class DiagnosticsWorker : BackgroundService
             var byStatus = string.Join(", ", r.Recipients.GroupBy(x => x.Status).Select(g => $"{g.Key}={g.Count()}"));
             sb.AppendLine($"  Заявка #{r.Id} «{r.Title}»: {r.Status}; получатели: {(byStatus.Length == 0 ? "нет" : byStatus)}");
         }
+
+        if (dikidi is not null)
+            sb.AppendLine(dikidi.Describe(now, detailed));
 
         return sb.ToString().TrimEnd();
     }
