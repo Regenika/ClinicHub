@@ -37,9 +37,11 @@ public static class PatientsEndpoints
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var term = search.Trim();
+            // Без учёта регистра на любой СУБД: в SQL Server Contains и так не учитывает регистр,
+            // а в PostgreSQL учитывает. ToLower переводится в LOWER() и там, и там (ADR-0009: только LINQ).
+            var term = search.Trim().ToLower();
             query = query.Where(p =>
-                p.FullName.Contains(term) || p.Phone.Contains(term));
+                p.FullName.ToLower().Contains(term) || p.Phone.Contains(term));
         }
 
         // Фильтр "аудитория прошлой заявки": оставить только тех, кто уже получал конкретную рассылку.
@@ -61,6 +63,7 @@ public static class PatientsEndpoints
                 DateOfBirth = p.DateOfBirth,
                 IsSubscribed = p.IsSubscribed,
                 Notes = p.Notes,
+                LastVisitAt = p.LastVisitAt,
             })
             .ToListAsync();
 
@@ -170,5 +173,6 @@ public static class PatientsEndpoints
         Age = p.DateOfBirth is DateTime dob ? CalculateAge(dob, DateTime.UtcNow.Date) : null,
         IsSubscribed = p.IsSubscribed,
         Notes = p.Notes,
+        LastVisitAt = p.LastVisitAt,
     };
 }

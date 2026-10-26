@@ -8,40 +8,48 @@ public static class DbInitializer
 {
     public static async Task InitializeAsync(ClinicHubDbContext db, ILogger logger, IConfiguration? config = null)
     {
-        var hasMigrations = (await db.Database.GetAppliedMigrationsAsync()).Any();
-        if (hasMigrations)
-        {
-            await db.Database.MigrateAsync();
-        }
-        else if ((await db.Database.GetPendingMigrationsAsync()).Any())
-        {
-            await db.Database.MigrateAsync();
-        }
-        else
-        {
-            await db.Database.EnsureCreatedAsync();
-        }
+        // Схема создаётся и обновляется только миграциями. EnsureCreated не используем:
+        // базу, созданную им, потом нельзя обновить миграцией.
+        await db.Database.MigrateAsync();
 
         await SeedAsync(db, logger, config);
+        await Modules.Catalog.CatalogSeed.SeedAsync(db, logger);
+        await Modules.Messaging.Scenarios.ScenarioSeed.SeedAsync(db, logger);
+    }
+
+    /// <summary>12 символов без похожих друг на друга (0/O, 1/l/I), чтобы пароль было легко переписать с экрана.</summary>
+    private static string GeneratePassword()
+    {
+        const string alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        return System.Security.Cryptography.RandomNumberGenerator.GetString(alphabet, 12);
     }
 
     private static async Task SeedAsync(ClinicHubDbContext db, ILogger logger, IConfiguration? config)
     {
-        // Администратор по умолчанию (обязательно сменить пароль в проде).
+        // Первый администратор. Пароля по умолчанию больше нет: он либо задан явно
+        // (переменная SEED_ADMIN_PASSWORD или Seed:AdminPassword в user-secrets), либо генерируется случайный
+        // и один раз выводится в журнал. Создаётся только в пустой базе.
         if (!await db.Users.AnyAsync())
         {
             var salt = PasswordHasher.GenerateSalt();
-            var login = Environment.GetEnvironmentVariable("SEED_ADMIN_LOGIN") ?? "admin";
-            var password = Environment.GetEnvironmentVariable("SEED_ADMIN_PASSWORD") ?? "Admin123!";
+            var login = Environment.GetEnvironmentVariable("SEED_ADMIN_LOGIN") ?? config?["Seed:AdminLogin"] ?? "admin";
+            var password = Environment.GetEnvironmentVariable("SEED_ADMIN_PASSWORD") ?? config?["Seed:AdminPassword"];
+            var generated = string.IsNullOrWhiteSpace(password);
+            if (generated)
+                password = GeneratePassword();
 
             db.Users.Add(new User
             {
                 Login = login,
                 Salt = salt,
-                PasswordHash = PasswordHasher.Hash(password, salt),
+                PasswordHash = PasswordHasher.Hash(password!, salt),
                 Role = UserRole.Admin,
             });
-            logger.LogWarning("Создан администратор по умолчанию: {Login} / {Password}", login, password);
+            if (generated)
+                logger.LogWarning("Создан первый администратор: логин {Login}, пароль {Password}. " +
+                                  "Запишите пароль: больше он нигде не показывается.", login, password);
+            else
+                logger.LogWarning("Создан первый администратор: логин {Login}, пароль из настроек.", login);
         }
 
         // Активная конфигурация лимитов.

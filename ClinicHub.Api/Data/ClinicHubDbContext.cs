@@ -1,3 +1,6 @@
+using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Messaging.Scenarios;
+using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,6 +28,30 @@ public class ClinicHubDbContext : DbContext
     public DbSet<AutoRuleFire> AutoRuleFires => Set<AutoRuleFire>();
     public DbSet<MessageTemplate> MessageTemplates => Set<MessageTemplate>();
 
+    // Модуль Catalog (схема catalog, ADR-0007 §2, ADR-0008 §2)
+    public DbSet<ServiceCategory> ServiceCategories => Set<ServiceCategory>();
+    public DbSet<Service> Services => Set<Service>();
+    public DbSet<Doctor> Doctors => Set<Doctor>();
+    public DbSet<DoctorService> DoctorServices => Set<DoctorService>();
+    public DbSet<PriceHistory> PriceHistory => Set<PriceHistory>();
+
+    // Модуль Visits (ADR-0008 §1)
+    public DbSet<Visit> Visits => Set<Visit>();
+    public DbSet<VisitService> VisitServices => Set<VisitService>();
+    public DbSet<ExternalServiceMap> ExternalServiceMaps => Set<ExternalServiceMap>();
+
+    // Сценарии напоминаний (ADR-0008 §3–4)
+    public DbSet<CareScenario> CareScenarios => Set<CareScenario>();
+    public DbSet<CareScenarioStep> CareScenarioSteps => Set<CareScenarioStep>();
+    public DbSet<PlannedReminder> PlannedReminders => Set<PlannedReminder>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        // Все DateTime (и DateTime?) — моменты времени в UTC (ADR-0009).
+        // Календарные даты (дата рождения и т.п.) ниже переопределены на тип date.
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Пользователи
@@ -40,6 +67,11 @@ public class ClinicHubDbContext : DbContext
         {
             e.Property(p => p.FullName).HasMaxLength(200).IsRequired();
             e.Property(p => p.Phone).HasMaxLength(32).IsRequired();
+            e.Property(p => p.DateOfBirth).HasColumnType("date").HasConversion<DateOnlyDateTimeConverter>();
+            // Значение по умолчанию в БД — для уже существующих строк при добавлении колонки (будут Manual).
+            // Sentinel вне диапазона enum: EF всегда пишет значение из кода и не путает Manual с «не задано».
+            e.Property(p => p.Source).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(PatientSource.Manual).HasSentinel((PatientSource)(-1));
             e.HasIndex(p => p.Phone);
         });
 
@@ -120,6 +152,7 @@ public class ClinicHubDbContext : DbContext
         {
             e.HasOne(f => f.AutoRule).WithMany(r => r.Fires).HasForeignKey(f => f.AutoRuleId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(f => f.Patient).WithMany().HasForeignKey(f => f.PatientId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(f => f.FiredOnDate).HasColumnType("date").HasConversion<DateOnlyDateTimeConverter>();
             // Идемпотентность: одно и то же правило не срабатывает дважды за один день для одного пациента.
             e.HasIndex(f => new { f.AutoRuleId, f.PatientId, f.FiredOnDate }).IsUnique();
         });
@@ -129,5 +162,10 @@ public class ClinicHubDbContext : DbContext
         {
             e.Property(t => t.Name).HasMaxLength(200).IsRequired();
         });
+
+        // Модули: каждый описывает свои таблицы сам.
+        CatalogModel.Configure(modelBuilder);
+        VisitModel.Configure(modelBuilder);
+        ScenarioModel.Configure(modelBuilder);
     }
 }
