@@ -3,6 +3,10 @@ using System.Text.Json.Serialization;
 using ClinicHub.Api.Background;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
+using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Integrations.Dikidi;
+using ClinicHub.Api.Modules.Messaging.Scenarios;
+using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -17,19 +21,40 @@ builder.Logging.AddProvider(new EventLogLoggerProvider(eventLog));
 eventLog.Write("Сервер", "=== Запуск ClinicHub.Api ===");
 
 // ── Конфигурация ────────────────────────────────────────────────────────────
-var jwt = builder.Configuration.GetSection("Jwt").Get<TokenOptions>()
-         ?? new TokenOptions { Secret = builder.Configuration["Jwt:Secret"] ?? "dev-secret-change-me" };
+// Секреты (JWT, пароль БД) в git не лежат: на компьютере разработчика — dotnet user-secrets,
+// на сервере клиники — переменные окружения. Как задать — README, раздел 1.
+var jwt = builder.Configuration.GetSection("Jwt").Get<TokenOptions>() ?? new TokenOptions();
 if (!string.IsNullOrEmpty(builder.Configuration["JWT_SECRET"]))
     jwt.Secret = builder.Configuration["JWT_SECRET"]!;
+if (Encoding.UTF8.GetByteCount(jwt.Secret) < 32)
+{
+    if (!builder.Environment.IsDevelopment())
+        StartupError.Fail(eventLog,
+            "Не задан секрет для токенов входа (Jwt:Secret, не короче 32 символов). " +
+            "Задайте переменную окружения Jwt__Secret или JWT_SECRET и перезапустите сервер.");
+
+    // При разработке не мешаем запуску: случайный секрет на время работы сервера.
+    // После перезапуска Admin попросит войти заново.
+    jwt.Secret = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+    eventLog.Write("Сервер", "Jwt:Secret не задан — взят случайный на этот запуск (только Development).");
+}
 builder.Services.AddSingleton(jwt);
 builder.Services.AddSingleton(new IntegrationOptions
 {
     WebhookApiKey = builder.Configuration["Integration:WebhookApiKey"] ?? "",
 });
 
-// ── БД (EF Core, SQL Server) ────────────────────────────────────────────────
-builder.Services.AddDbContext<ClinicHubDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("ClinicHub") ?? ""));
+// ── БД (EF Core) ────────────────────────────────────────────────────────────
+// Сейчас SQL Server, перед продом — PostgreSQL (ADR-0009). Код запросов пишем переносимо: только LINQ.
+// Схемы site и catalog занимают сайт и каталог (ADR-0007, ADR-0008), таблицы сервера — в схеме по умолчанию.
+var connectionString = builder.Configuration.GetConnectionString("ClinicHub");
+if (string.IsNullOrWhiteSpace(connectionString))
+    StartupError.Fail(eventLog,
+        "Не задана строка подключения к базе (ConnectionStrings:ClinicHub). " +
+        "На компьютере разработчика: dotnet user-secrets set \"ConnectionStrings:ClinicHub\" " +
+        "\"Server=(localdb)\\MSSQLLocalDB;Database=ClinicHub;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True\" " +
+        "(или Server=.\\SQLEXPRESS для SQL Server Express). На сервере: переменная окружения ConnectionStrings__ClinicHub.");
+builder.Services.AddDbContext<ClinicHubDbContext>(options => options.UseSqlServer(connectionString ?? ""));
 
 // ── Сервисы ─────────────────────────────────────────────────────────────────
 builder.Services.AddHttpContextAccessor();
@@ -42,6 +67,20 @@ builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<SchedulerService>();
 builder.Services.AddScoped<WebhookNotifier>();
 builder.Services.AddScoped<AutoRuleService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<VisitEvents>();
+// Сценарии напоминаний (#14): планировщик подписан на «визит завершён», отправка — фоновым воркером.
+builder.Services.AddScoped<ScenarioPlanner>();
+builder.Services.AddScoped<IVisitCompletedHandler>(sp => sp.GetRequiredService<ScenarioPlanner>());
+builder.Services.AddScoped<ReminderDispatcher>();
+builder.Services.AddHostedService<ReminderWorker>();
+// Адаптер Dikidi (#15): только чтение журнала. Без логина и пароля в секретах — выключен.
+var dikidi = builder.Configuration.GetSection("Dikidi").Get<DikidiOptions>() ?? new DikidiOptions();
+builder.Services.AddSingleton(dikidi);
+builder.Services.AddSingleton(new DikidiSyncState { Configured = dikidi.IsConfigured });
+builder.Services.AddSingleton<IDikidiClient, DikidiWebClient>();
+builder.Services.AddScoped<DikidiSync>();
+builder.Services.AddHostedService<DikidiWorker>();
 builder.Services.AddHostedService<SchedulerWorker>();
 builder.Services.AddHostedService<AutoRuleWorker>();
 builder.Services.AddHostedService<LanDiscoveryService>();
@@ -132,6 +171,10 @@ app.MapWebhookEndpoints();
 app.MapDashboardEndpoints();
 app.MapAutoRulesEndpoints();
 app.MapMessageTemplatesEndpoints();
+app.MapCatalogEndpoints();
+app.MapVisitEndpoints();
+app.MapDikidiEndpoints();
+app.MapScenarioEndpoints();
 
 // Отладка: только с самого компьютера, где запущен сервер (в журнале есть номера и тексты SMS).
 app.MapGet("/api/debug/log", (HttpContext ctx, int? tail) =>
@@ -139,9 +182,9 @@ app.MapGet("/api/debug/log", (HttpContext ctx, int? tail) =>
         ? Results.Text(string.Join(Environment.NewLine, eventLog.Tail(tail ?? 300)), "text/plain; charset=utf-8")
         : Results.NotFound()).AllowAnonymous();
 
-app.MapGet("/api/debug/state", async (HttpContext ctx, ClinicHubDbContext db, CancellationToken ct) =>
+app.MapGet("/api/debug/state", async (HttpContext ctx, ClinicHubDbContext db, DikidiSyncState dikidiState, CancellationToken ct) =>
     IsLocal(ctx)
-        ? Results.Text(await DiagnosticsWorker.BuildAsync(db, detailed: true, ct), "text/plain; charset=utf-8")
+        ? Results.Text(await DiagnosticsWorker.BuildAsync(db, detailed: true, ct, dikidiState), "text/plain; charset=utf-8")
         : Results.NotFound()).AllowAnonymous();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }))
@@ -153,4 +196,19 @@ static bool IsLocal(HttpContext ctx)
 {
     var ip = ctx.Connection.RemoteIpAddress;
     return ip is null || System.Net.IPAddress.IsLoopback(ip);
+}
+
+/// <summary>Понятная остановка при неверной настройке вместо трассировки стека.</summary>
+static class StartupError
+{
+    public static void Fail(EventLog log, string message)
+    {
+        // dotnet ef (создание миграций) тоже запускает Program.cs, но секреты ему не нужны.
+        if (EF.IsDesignTime)
+            return;
+
+        log.Write("Сервер", "ОШИБКА НАСТРОЙКИ: " + message);
+        Console.Error.WriteLine("ОШИБКА НАСТРОЙКИ: " + message);
+        Environment.Exit(1);
+    }
 }
