@@ -22,6 +22,9 @@ public class RequestRecipient
     public DateTime? SendAfter { get; set; }
 
     public RecipientStatus Status { get; set; } = RecipientStatus.Pending;
+
+    /// <summary>Почему не отправлено (для Status = Skipped): «нет согласия на рекламу по SMS» и т. п.</summary>
+    public string? SkipReason { get; set; }
     public DateTime? SentAt { get; set; }
 
     public List<SmsQueueItem> QueueItems { get; set; } = new();

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
+using ClinicHub.Api.Modules.Consents;
 using ClinicHub.Api.Modules.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -119,7 +120,8 @@ public static class ScenarioEndpoints
     }
 
     /// <summary>«Что запланируется, если подтвердить этот визит» — для экрана «пациент уходит». Ничего не сохраняет.</summary>
-    private static async Task<IResult> Preview(PreviewDto dto, ClinicHubDbContext db, ScenarioPlanner planner, CancellationToken ct)
+    private static async Task<IResult> Preview(
+        PreviewDto dto, ClinicHubDbContext db, ScenarioPlanner planner, IConsentChecker consents, TimeProvider clock, CancellationToken ct)
     {
         var visit = await db.Visits.Include(v => v.Services).Include(v => v.Patient).FirstOrDefaultAsync(v => v.Id == dto.VisitId, ct);
         if (visit?.Patient is null)
@@ -127,9 +129,20 @@ public static class ScenarioEndpoints
 
         var serviceIds = dto.ServiceIds ?? visit.Services.Select(s => s.ServiceId).ToList();
         var drafts = await planner.DraftsForVisitAsync(visit.Patient, visit.StartAt, serviceIds, ct);
+
+        // Предупреждение для администратора: сейчас такое напоминание не ушло бы (нет согласия на рекламу, отписка).
+        // Перед отправкой согласие проверяется ещё раз — его могут дать или отозвать до срока.
+        var now = clock.GetUtcNow().UtcDateTime;
+        var notes = new Dictionary<ScenarioPurpose, string?>();
+        foreach (var purpose in drafts.Select(d => d.Purpose).Distinct())
+        {
+            var decision = await consents.CheckAsync(
+                visit.PatientId, ReminderDispatcher.ToMessagePurpose(purpose), ConsentChannel.Sms, now, ct);
+            notes[purpose] = decision.Allowed ? null : "сейчас не ушло бы: " + decision.Reason;
+        }
+
         return Results.Ok(drafts.Select(d => new ReminderDraftDto(
-            d.ScenarioId, d.ScenarioName, d.Purpose, d.DueAt, d.Text,
-            d.Purpose == ScenarioPurpose.Marketing ? "рекламное: не уйдёт, пока нет модуля согласий" : null)));
+            d.ScenarioId, d.ScenarioName, d.Purpose, d.DueAt, d.Text, notes[d.Purpose])));
     }
 
     // ── Напоминания ─────────────────────────────────────────────────────────

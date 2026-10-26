@@ -19,6 +19,9 @@ public class RecipientInputDto
 public class CreateSmsRequestDto
 {
     public RequestType Type { get; set; }
+
+    /// <summary>Обязательно: Service (напоминание о записи, перенос) или Marketing (реклама — только с согласием).</summary>
+    public MessagePurpose? Purpose { get; set; }
     public string Title { get; set; } = "";
     public SendMode SendMode { get; set; } = SendMode.Now;
 
@@ -54,12 +57,16 @@ public class RecipientOutDto
     public DateTime? SendAfter { get; set; }
     public string Status { get; set; } = "";
     public DateTime? SentAt { get; set; }
+
+    /// <summary>Почему не отправлено (для статуса Skipped).</summary>
+    public string? SkipReason { get; set; }
 }
 
 public class SmsRequestOutDto
 {
     public int Id { get; set; }
     public string Type { get; set; } = "";
+    public string Purpose { get; set; } = "";
     public string Title { get; set; } = "";
     public string Status { get; set; } = "";
     public string SendMode { get; set; } = "";
@@ -70,5 +77,8 @@ public class SmsRequestOutDto
     public int RecipientCount { get; set; }
     public int SentCount { get; set; }
     public int FailedCount { get; set; }
+
+    /// <summary>Пропущено по правилам (нет согласия, отписка).</summary>
+    public int SkippedCount { get; set; }
     public List<RecipientOutDto> Recipients { get; set; } = new();
 }

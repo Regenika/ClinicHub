@@ -26,6 +26,9 @@ public static class WebhookEndpoints
         Data.ClinicHubDbContext db,
         CancellationToken ct)
     {
+        if (RequestsEndpoints.PurposeError(dto.Request) is { } purposeError)
+            return Results.BadRequest(new { Error = purposeError });
+
         var request = await RequestsEndpoints.CreateRequestCoreAsync(
             dto.Request, db, createdById: null, approveAutomatically: true, ct);
 

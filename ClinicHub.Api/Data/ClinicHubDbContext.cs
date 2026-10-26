@@ -1,4 +1,5 @@
 using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Consents;
 using ClinicHub.Api.Modules.Messaging.Scenarios;
 using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Core.Entities;
@@ -45,6 +46,39 @@ public class ClinicHubDbContext : DbContext
     public DbSet<CareScenarioStep> CareScenarioSteps => Set<CareScenarioStep>();
     public DbSet<PlannedReminder> PlannedReminders => Set<PlannedReminder>();
 
+    // Модуль Consents (схема consents, Issue #34): журнал только дописывается.
+    public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        GuardConsentJournal();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        GuardConsentJournal();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Журнал согласий юридически значим: записи не меняются и не удаляются (отзыв — новая запись с Granted = false).
+    /// Исключение одно — запись уходит вместе с удаляемым пациентом.
+    /// </summary>
+    private void GuardConsentJournal()
+    {
+        foreach (var entry in ChangeTracker.Entries<ConsentRecord>())
+        {
+            if (entry.State == EntityState.Modified)
+                throw new InvalidOperationException(
+                    $"Журнал согласий только дописывается: запись #{entry.Entity.Id} менять нельзя. Отзыв — новая запись с Granted = false.");
+            if (entry.State == EntityState.Deleted && !ChangeTracker.Entries<Patient>()
+                    .Any(p => p.State == EntityState.Deleted && p.Entity.Id == entry.Entity.PatientId))
+                throw new InvalidOperationException(
+                    $"Журнал согласий только дописывается: запись #{entry.Entity.Id} удалять нельзя.");
+        }
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         // Все DateTime (и DateTime?) — моменты времени в UTC (ADR-0009).
@@ -82,6 +116,10 @@ public class ClinicHubDbContext : DbContext
             e.Property(r => r.Type).HasConversion<string>().HasMaxLength(16);
             e.Property(r => r.Status).HasConversion<string>().HasMaxLength(16);
             e.Property(r => r.SendMode).HasConversion<string>().HasMaxLength(16);
+            // Существующие заявки миграция помечает Marketing: не знаем цель — перестраховываемся (Issue #34).
+            // Sentinel вне enum: EF всегда пишет значение из кода, Service не подменяется значением по умолчанию.
+            e.Property(r => r.Purpose).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(MessagePurpose.Marketing).HasSentinel((MessagePurpose)(-1));
             e.HasIndex(r => r.Status);
             e.HasOne(r => r.CreatedBy).WithMany().HasForeignKey(r => r.CreatedById).OnDelete(DeleteBehavior.NoAction);
             e.HasOne(r => r.ApprovedBy).WithMany().HasForeignKey(r => r.ApprovedById).OnDelete(DeleteBehavior.NoAction);
@@ -91,6 +129,7 @@ public class ClinicHubDbContext : DbContext
         modelBuilder.Entity<RequestRecipient>(e =>
         {
             e.HasIndex(r => r.Status);
+            e.Property(r => r.SkipReason).HasMaxLength(300);
             e.HasOne(r => r.Request).WithMany(r => r.Recipients).HasForeignKey(r => r.RequestId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(r => r.Patient).WithMany().HasForeignKey(r => r.PatientId).OnDelete(DeleteBehavior.SetNull);
         });
@@ -146,6 +185,8 @@ public class ClinicHubDbContext : DbContext
         {
             e.Property(r => r.Name).HasMaxLength(200).IsRequired();
             e.Property(r => r.Trigger).HasConversion<string>().HasMaxLength(32);
+            e.Property(r => r.Purpose).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(MessagePurpose.Marketing).HasSentinel((MessagePurpose)(-1));
         });
 
         modelBuilder.Entity<AutoRuleFire>(e =>
@@ -167,5 +208,6 @@ public class ClinicHubDbContext : DbContext
         CatalogModel.Configure(modelBuilder);
         VisitModel.Configure(modelBuilder);
         ScenarioModel.Configure(modelBuilder);
+        ConsentModel.Configure(modelBuilder);
     }
 }

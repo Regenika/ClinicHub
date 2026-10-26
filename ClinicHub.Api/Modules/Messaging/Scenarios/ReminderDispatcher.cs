@@ -1,4 +1,5 @@
 using ClinicHub.Api.Data;
+using ClinicHub.Api.Modules.Consents;
 using ClinicHub.Api.Modules.Shared;
 using ClinicHub.Api.Modules.Visits;
 using ClinicHub.Api.Services;
@@ -13,7 +14,8 @@ namespace ClinicHub.Api.Modules.Messaging.Scenarios;
 /// персональная одобренная SmsRequest → очередь SIM с её лимитами и окном отправки.
 /// Вне окна отправки (<see cref="SendWindow"/>, часы из RateConfig) ничего не делает: напоминания ждут его открытия.
 /// </summary>
-public sealed class ReminderDispatcher(ClinicHubDbContext db, TimeProvider clock, ILogger<ReminderDispatcher> logger)
+public sealed class ReminderDispatcher(
+    ClinicHubDbContext db, IConsentChecker consents, TimeProvider clock, ILogger<ReminderDispatcher> logger)
 {
     public async Task<int> RunAsync(CancellationToken ct)
     {
@@ -86,12 +88,10 @@ public sealed class ReminderDispatcher(ClinicHubDbContext db, TimeProvider clock
         if (r.ScenarioId is not null && r.Scenario is { IsActive: false })
             return (ReminderStatus.Cancelled, "сценарий выключен");
 
-        // CLAUDE.md, ADR-0008 §5: реклама — только с согласием; пока модуля согласий нет, не отправляем вовсе.
-        if (r.Purpose == ScenarioPurpose.Marketing)
-            return (ReminderStatus.Skipped, "нет модуля согласий (PLAN 1.2): рекламные напоминания не отправляются");
-
-        if (!patient.IsSubscribed)
-            return (ReminderStatus.Skipped, "пациент отписан от рассылок");
+        // CLAUDE.md, ADR-0008 §5: отписка останавливает всё, реклама — только с согласием на канал (модуль Consents).
+        var consent = await consents.CheckAsync(r.PatientId, ToMessagePurpose(r.Purpose), ConsentChannel.Sms, now, ct);
+        if (!consent.Allowed)
+            return (ReminderStatus.Skipped, consent.Reason);
         if (string.IsNullOrWhiteSpace(patient.Phone))
             return (ReminderStatus.Skipped, "у пациента нет телефона");
         if (string.IsNullOrWhiteSpace(r.Text))
@@ -117,6 +117,9 @@ public sealed class ReminderDispatcher(ClinicHubDbContext db, TimeProvider clock
         return null;
     }
 
+    internal static MessagePurpose ToMessagePurpose(ScenarioPurpose purpose) =>
+        purpose == ScenarioPurpose.Marketing ? MessagePurpose.Marketing : MessagePurpose.Service;
+
     /// <summary>Завтра (по Москве) в то же время, что было запланировано.</summary>
     internal static DateTime NextDaySameTime(DateTime dueUtc, DateTime nowUtc)
     {
@@ -140,6 +143,7 @@ public sealed class ReminderDispatcher(ClinicHubDbContext db, TimeProvider clock
             TextTemplate = r.Text,
             ApprovedAt = now,
             ExternalId = $"reminder:{r.Id}",
+            Purpose = ToMessagePurpose(r.Purpose),
         };
         request.Recipients.Add(new RequestRecipient
         {
