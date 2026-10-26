@@ -47,7 +47,13 @@ body {
     font-size: 16px;
     line-height: 1.55;
     -webkit-text-size-adjust: 100%;
+    /* Подвал всегда внизу экрана: на коротких страницах основная часть растягивается на свободную высоту. */
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
 }
+body > main { flex: 1 0 auto; }
 
 a { color: var(--accent); }
 a:hover { color: var(--accent-dark); }
@@ -279,3 +285,13 @@ input[disabled] { background: var(--surface-soft); color: var(--ink-muted); }
 .admin-table__actions .btn { margin-left: 4px; }
 .validation-message { color: var(--danger); font-size: 14px; }
 ul.form-errors { margin: 0; padding: 14px 18px 14px 36px; }
+
+/* ── Редактор страниц ──────────────────────────────────────── */
+.page-blocks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.page-block { padding: 14px 18px; }
+.page-block--hidden { opacity: 0.65; }
+.page-block__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.page-block__form { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.block-items { padding: 12px; border: 1px dashed var(--line-outline); border-radius: var(--radius-sm); }
+.block-item { display: flex; flex-direction: column; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.preview-banner { padding: 10px 16px; background: var(--notice); color: var(--notice-ink); text-align: center; font-size: 15px; }

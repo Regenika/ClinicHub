@@ -85,6 +85,7 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<EditorAccounts>();
 builder.Services.AddSingleton<CatalogAdmin>();
+builder.Services.AddSingleton<PageEditor>();
 
 // Кириллицу в HTML отдаём как есть, а не &#x...; — страницы короче и читаемее. Опасные символы (<, >, &, ") по-прежнему экранируются.
 builder.Services.AddWebEncoders(o => o.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));

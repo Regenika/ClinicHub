@@ -1,14 +1,96 @@
 @page "/admin/stranicy"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @layout AdminLayout
+@inject PageEditor Pages
+@inject NavigationManager Nav
 
 <PageTitle>Страницы — админка</PageTitle>
 
-<section class="stack">
-    <h1 class="h2">Страницы</h1>
-    <p class="notice" role="note">
-        Редактор страниц из блоков (добавить, скрыть, переставить блок, черновик → предпросмотр → публикация, откат) —
-        следующий этап (PLAN 4.8). Сейчас страницы и блоки правятся прямо в базе: таблицы site.Pages, site.PageVersions, site.Blocks.
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Страницы</h1>
+        @if (form is null)
+        {
+            <button class="btn btn--primary" @onclick="() => { form = new(); error = null; }">Новая страница</button>
+        }
+    </div>
+    <p class="muted">
+        Страница собирается из блоков. Правки делаются в черновике и попадают на сайт только после «Опубликовать».
+        Прежние версии сохраняются — к ним можно вернуться.
     </p>
-    <p class="muted">Услуги, цены, врачи и контакты уже правятся в соседних разделах и сразу меняются на всех страницах.</p>
+
+    @if (form is not null)
+    {
+        <EditForm Model="form" OnSubmit="CreateAsync" class="stack setup__form admin-form">
+            <h2 class="h3">Новая страница</h2>
+            @if (error is not null)
+            {
+                <div class="form-errors" role="alert">@error</div>
+            }
+            <div class="field">
+                <label for="p-path">Адрес</label>
+                <InputText id="p-path" spellcheck="false" @bind-Value="form.Path" placeholder="/akcii" />
+                <span class="muted small">Латиницей: /uslugi, /akcii/leto. Адрес потом не меняется — на него будут ссылки.</span>
+            </div>
+            <div class="field">
+                <label for="p-title">Заголовок (вкладка браузера и поисковики)</label>
+                <InputText id="p-title" @bind-Value="form.Title" />
+            </div>
+            <div class="field">
+                <label for="p-desc">Описание для поисковиков</label>
+                <InputTextArea id="p-desc" rows="2" @bind-Value="form.Description" />
+            </div>
+            <div class="row-wrap">
+                <button class="btn btn--primary" type="submit">Создать</button>
+                <button class="btn btn--outline" type="button" @onclick="() => form = null">Отмена</button>
+            </div>
+        </EditForm>
+    }
+
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead><tr><th>Адрес</th><th>Заголовок</th><th>На сайте</th><th>Опубликована (МСК)</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in rows)
+                {
+                    <tr class="@(p.IsPublished ? null : "admin-table__muted")">
+                        <td><a href="@p.Path" target="_blank" rel="noopener">@p.Path</a></td>
+                        <td>@p.Title</td>
+                        <td>@(p.IsPublished ? "да" : p.HasPublished ? "снята" : "ещё не опубликована")@(p.HasDraft ? " · есть черновик" : "")</td>
+                        <td class="tabular">@(p.PublishedAt is { } t ? $"{ClinicTime.ToLocal(new DateTimeOffset(t, TimeSpan.Zero)):dd.MM.yyyy HH:mm}, {p.PublishedBy}" : "—")</td>
+                        <td class="admin-table__actions"><a class="btn btn--outline btn--sm" href="/admin/stranicy/@p.Id">Открыть</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 </section>
+
+@code {
+    public sealed class NewPageForm
+    {
+        public string? Path { get; set; }
+        public string? Title { get; set; }
+        public string? Description { get; set; }
+    }
+
+    private List<PageRow> rows = [];
+    private NewPageForm? form;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => rows = await Pages.ListAsync();
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(form!.Title))
+        {
+            error = "Укажите заголовок.";
+            return;
+        }
+        var (id, createError) = await Pages.CreateAsync(form.Path ?? "", form.Title, form.Description ?? "");
+        error = createError;
+        if (id is { } pageId)
+            Nav.NavigateTo($"/admin/stranicy/{pageId}");
+    }
+}
