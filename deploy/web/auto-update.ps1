@@ -41,6 +41,9 @@ if ($Register -or $Unregister) {
 
     if ($Unregister) {
         if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+            # Сначала остановить идущий запуск: иначе начатая сборка доделается и поставит сайт уже после выключения
+            # (а если сайт тем временем удалили — поставит заново).
+            Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
             Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
         }
         Write-Host "Автообновление выключено. Сайт остаётся установленным; папку $Root можно удалить." -ForegroundColor Green
@@ -145,6 +148,12 @@ try {
     Log "Собираю сайт"
     if ((Run-Script (Join-Path $Src "deploy\web\build-package.ps1") @("-NoZip")) -ne 0) {
         throw "сборка не удалась (подробности выше)"
+    }
+
+    # Пока шла сборка (несколько минут), автообновление могли выключить — тогда не ставим.
+    if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
+        Log "Автообновление выключено во время сборки — устанавливать не буду."
+        return
     }
 
     Log "Устанавливаю"
