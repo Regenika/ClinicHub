@@ -1,5 +1,8 @@
 # ClinicHub — рассылка SMS для клиники
 
+[![Проверка](https://github.com/Regenika/ClinicHub/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Regenika/ClinicHub/actions/workflows/ci.yml)
+[![Проверка приложений](https://github.com/Regenika/ClinicHub/actions/workflows/ci-apps.yml/badge.svg?branch=master)](https://github.com/Regenika/ClinicHub/actions/workflows/ci-apps.yml)
+
 Из чего состоит:
 
 | Проект | Что это |
