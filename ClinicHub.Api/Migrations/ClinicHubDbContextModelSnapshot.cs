@@ -242,6 +242,61 @@ namespace ClinicHub.Api.Migrations
                     b.ToTable("ServiceCategories", "catalog");
                 });
 
+            modelBuilder.Entity("ClinicHub.Api.Modules.Consents.ConsentRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ById")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("EvidenceRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("Granted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ById");
+
+                    b.HasIndex("PatientId", "Purpose", "At");
+
+                    b.ToTable("Records", "consents");
+                });
+
             modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenario", b =>
                 {
                     b.Property<int>("Id")
@@ -595,6 +650,13 @@ namespace ClinicHub.Api.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Marketing");
+
                     b.Property<TimeSpan>("SendTime")
                         .HasColumnType("time");
 
@@ -863,6 +925,10 @@ namespace ClinicHub.Api.Migrations
                     b.Property<DateTime?>("SentAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("SkipReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<int>("SmsSegments")
                         .HasColumnType("int");
 
@@ -1055,6 +1121,13 @@ namespace ClinicHub.Api.Migrations
                     b.Property<DateTime?>("PlannedSendAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Marketing");
+
                     b.Property<string>("SendMode")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -1156,6 +1229,24 @@ namespace ClinicHub.Api.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("ClinicHub.Api.Modules.Consents.ConsentRecord", b =>
+                {
+                    b.HasOne("ClinicHub.Core.Entities.User", "By")
+                        .WithMany()
+                        .HasForeignKey("ById")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ClinicHub.Core.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("By");
+
+                    b.Navigation("Patient");
                 });
 
             modelBuilder.Entity("ClinicHub.Api.Modules.Messaging.Scenarios.CareScenarioService", b =>
