@@ -1,0 +1,165 @@
+@page "/admin/vrachi"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@inject CatalogAdmin Catalog
+
+<PageTitle>Врачи — админка</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Врачи</h1>
+        @if (form is null)
+        {
+            <button class="btn btn--primary" @onclick="NewAsync">Добавить врача</button>
+        }
+    </div>
+    <p class="muted">Порядок в списке — порядок на сайте. Услуги врача определяют, к кому можно записаться на услугу.</p>
+
+    @if (form is not null)
+    {
+        <EditForm Model="form" OnValidSubmit="SaveAsync" class="stack setup__form admin-form">
+            <h2 class="h3">@(form.Id == 0 ? "Новый врач" : "Изменить врача")</h2>
+            <DataAnnotationsValidator />
+            <ValidationSummary class="form-errors" />
+            @if (error is not null)
+            {
+                <div class="form-errors" role="alert">@error</div>
+            }
+            <div class="field">
+                <label for="d-name">ФИО</label>
+                <InputText id="d-name" @bind-Value="form.Name" />
+            </div>
+            <div class="field">
+                <label for="d-key">Ключ (латиницей, для адреса записи)</label>
+                <InputText id="d-key" disabled="@(form.Id != 0)" spellcheck="false" @bind-Value="form.Key" placeholder="ivanova" />
+            </div>
+            <div class="field">
+                <label for="d-role">Специальность и стаж</label>
+                <InputText id="d-role" @bind-Value="form.Role" placeholder="Врач-косметолог · стаж 10 лет" />
+            </div>
+            <fieldset class="field">
+                <legend>Услуги, которые ведёт врач (ни одной — все)</legend>
+                @foreach (var s in services)
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@form.ServiceIds.Contains(s.Id)" @onchange="e => Toggle(s.Id, (bool)e.Value!)" />
+                        <span>@s.Name</span>
+                    </label>
+                }
+            </fieldset>
+            <label class="check">
+                <InputCheckbox @bind-Value="form.IsVisible" />
+                <span>Показывать на сайте и в записи</span>
+            </label>
+            <div class="row-wrap">
+                <button class="btn btn--primary" type="submit" disabled="@busy">Сохранить</button>
+                <button class="btn btn--outline" type="button" @onclick="Cancel">Отмена</button>
+            </div>
+        </EditForm>
+    }
+
+    @if (saved is not null)
+    {
+        <p class="notice" role="status">@saved</p>
+    }
+
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead><tr><th>Врач</th><th>Услуги</th><th>На сайте</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var d in rows)
+                {
+                    <tr class="@(d.IsVisible ? null : "admin-table__muted")">
+                        <td>@d.Name<br /><span class="muted small">@d.Role</span></td>
+                        <td>@(d.ServiceNames.Count == 0 ? "все" : string.Join(", ", d.ServiceNames))</td>
+                        <td>@(d.IsVisible ? "да" : "скрыт")</td>
+                        <td class="admin-table__actions">
+                            <button class="btn btn--outline btn--sm" title="Выше" aria-label="Выше" @onclick="() => MoveAsync(d.Id, -1)">↑</button>
+                            <button class="btn btn--outline btn--sm" title="Ниже" aria-label="Ниже" @onclick="() => MoveAsync(d.Id, 1)">↓</button>
+                            <button class="btn btn--outline btn--sm" @onclick="() => EditAsync(d.Id)">Изменить</button>
+                            @if (confirmDelete == d.Id)
+                            {
+                                <button class="btn btn--danger btn--sm" @onclick="() => DeleteAsync(d.Id)">Точно удалить?</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn--outline btn--sm" @onclick="() => confirmDelete = d.Id">Удалить</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private List<DoctorRow> rows = [];
+    private List<ServiceRow> services = [];
+    private DoctorForm? form;
+    private string? error;
+    private string? saved;
+    private int? confirmDelete;
+    private bool busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        rows = await Catalog.DoctorsAsync();
+        services = await Catalog.ServicesAsync();
+    }
+
+    private Task NewAsync()
+    {
+        form = new DoctorForm();
+        error = saved = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task EditAsync(int id)
+    {
+        form = await Catalog.DoctorAsync(id);
+        error = saved = null;
+        confirmDelete = null;
+    }
+
+    private void Toggle(int serviceId, bool on)
+    {
+        if (on) form!.ServiceIds.Add(serviceId);
+        else form!.ServiceIds.Remove(serviceId);
+    }
+
+    private void Cancel()
+    {
+        form = null;
+        error = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        busy = true;
+        error = await Catalog.SaveDoctorAsync(form!);
+        busy = false;
+        if (error is not null)
+            return;
+        saved = $"Сохранено: {form!.Name}.";
+        form = null;
+        await LoadAsync();
+    }
+
+    private async Task MoveAsync(int id, int direction)
+    {
+        await Catalog.MoveDoctorAsync(id, direction);
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await Catalog.DeleteDoctorAsync(id);
+        confirmDelete = null;
+        saved = "Врач удалён.";
+        await LoadAsync();
+    }
+}

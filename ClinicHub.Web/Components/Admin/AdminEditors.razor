@@ -1,0 +1,153 @@
+@page "/admin/redaktory"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Web.Data
+@inject EditorAccounts Accounts
+
+<PageTitle>Редакторы — админка</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Редакторы</h1>
+        @if (form is null)
+        {
+            <button class="btn btn--primary" @onclick="New">Добавить редактора</button>
+        }
+    </div>
+    <p class="muted">
+        Кто может входить в админку. Отключённый редактор теряет доступ сразу, запись о нём остаётся в истории изменений.
+        Роли (администратор, маркетолог, оператор) появятся вместе с общими учётными записями сервера.
+    </p>
+
+    @if (form is not null)
+    {
+        <EditForm Model="form" OnSubmit="SaveAsync" class="stack setup__form admin-form">
+            <h2 class="h3">@(form.EditorId == 0 ? "Новый редактор" : $"Новый пароль: {form.Login}")</h2>
+            @if (error is not null)
+            {
+                <div class="form-errors" role="alert">@error</div>
+            }
+            @if (form.EditorId == 0)
+            {
+                <div class="field">
+                    <label for="e-login">Логин</label>
+                    <InputText id="e-login" autocomplete="off" spellcheck="false" @bind-Value="form.Login" />
+                </div>
+                <div class="field">
+                    <label for="e-name">Имя</label>
+                    <InputText id="e-name" autocomplete="off" @bind-Value="form.DisplayName" />
+                </div>
+            }
+            <div class="field">
+                <label for="e-password">Пароль, не короче @AdminAuth.MinPasswordLength символов</label>
+                <InputText id="e-password" type="password" autocomplete="new-password" @bind-Value="form.Password" />
+            </div>
+            <div class="field">
+                <label for="e-repeat">Пароль ещё раз</label>
+                <InputText id="e-repeat" type="password" autocomplete="new-password" @bind-Value="form.Repeat" />
+            </div>
+            <div class="row-wrap">
+                <button class="btn btn--primary" type="submit">Сохранить</button>
+                <button class="btn btn--outline" type="button" @onclick="() => form = null">Отмена</button>
+            </div>
+        </EditForm>
+    }
+
+    @if (message is not null)
+    {
+        <p class="notice" role="status">@message</p>
+    }
+
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead><tr><th>Логин</th><th>Имя</th><th>Последний вход (МСК)</th><th>Доступ</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var e in editors)
+                {
+                    <tr class="@(e.IsActive ? null : "admin-table__muted")">
+                        <td>@e.Login</td>
+                        <td>@e.DisplayName</td>
+                        <td class="tabular">@(e.LastLoginAt is { } t ? ClinicTime.ToLocal(new DateTimeOffset(t, TimeSpan.Zero)).ToString("dd.MM.yyyy HH:mm") : "—")</td>
+                        <td>@(e.IsActive ? "есть" : "отключён")</td>
+                        <td class="admin-table__actions">
+                            <button class="btn btn--outline btn--sm" @onclick="() => ChangePassword(e)">Сменить пароль</button>
+                            <button class="btn btn--outline btn--sm" @onclick="() => ToggleAsync(e)">@(e.IsActive ? "Отключить" : "Включить")</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    public sealed class EditorForm
+    {
+        public int EditorId { get; set; }
+        public string? Login { get; set; }
+        public string? DisplayName { get; set; }
+        public string? Password { get; set; }
+        public string? Repeat { get; set; }
+    }
+
+    [CascadingParameter] private Task<AuthenticationState> Auth { get; set; } = default!;
+
+    private List<Editor> editors = [];
+    private EditorForm? form;
+    private string? error;
+    private string? message;
+
+    protected override async Task OnInitializedAsync() => editors = await Accounts.ListAsync();
+
+    private void New()
+    {
+        form = new EditorForm();
+        error = message = null;
+    }
+
+    private void ChangePassword(Editor e)
+    {
+        form = new EditorForm { EditorId = e.Id, Login = e.Login };
+        error = message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        var me = AdminAuth.LoginOf((await Auth).User);
+        if (form!.EditorId == 0)
+        {
+            error = EditorAccounts.Validate(form.Login, form.DisplayName, form.Password, form.Repeat);
+            if (error is null)
+                (_, error) = await Accounts.CreateAsync(form.Login!, form.DisplayName!, form.Password!, onlyIfNone: false, createdBy: me);
+            if (error is null)
+                message = $"Редактор {EditorAccounts.NormalizeLogin(form.Login)} добавлен.";
+        }
+        else
+        {
+            error = EditorAccounts.ValidatePassword(form.Password, form.Repeat);
+            if (error is null)
+            {
+                await Accounts.SetPasswordAsync(form.EditorId, form.Password!, me);
+                message = $"Пароль {form.Login} изменён.";
+            }
+        }
+
+        if (error is null)
+        {
+            form = null;
+            editors = await Accounts.ListAsync();
+        }
+        else
+        {
+            form.Password = form.Repeat = null;
+        }
+    }
+
+    private async Task ToggleAsync(Editor e)
+    {
+        message = await Accounts.SetActiveAsync(e.Id, !e.IsActive, AdminAuth.LoginOf((await Auth).User))
+            ?? (e.IsActive ? $"{e.Login} отключён." : $"{e.Login} включён.");
+        editors = await Accounts.ListAsync();
+    }
+}
