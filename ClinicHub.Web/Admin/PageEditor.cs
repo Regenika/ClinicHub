@@ -8,7 +8,7 @@ namespace ClinicHub.Web.Admin;
 
 public sealed record PageRow(int Id, string Path, string Title, bool IsPublished, bool HasPublished, bool HasDraft, DateTime? PublishedAt, string? PublishedBy);
 public sealed record VersionRow(int Id, PageVersionStatus Status, DateTime CreatedAt, DateTime? PublishedAt, string? PublishedBy, int BlockCount);
-public sealed record DraftBlock(int Id, string Type, bool IsVisible, object Settings, string? Error);
+public sealed record DraftBlock(int Id, string Type, bool IsVisible, object Settings, string? Error, string Style = "");
 
 /// <summary>Страница в редакторе: свойства, черновик (если начат) и история версий.</summary>
 public sealed record PageForEdit(
@@ -78,7 +78,7 @@ public sealed partial class PageEditor(IDbContextFactory<SiteDbContext> dbFactor
             return new DraftBlock(b.Id, b.Type, b.IsVisible, new object(), $"Неизвестный тип блока «{b.Type}» — на сайте он не показывается. Удалите его.");
         try
         {
-            return new DraftBlock(b.Id, b.Type, b.IsVisible, type.Deserialize(b.Data), null);
+            return new DraftBlock(b.Id, b.Type, b.IsVisible, type.Deserialize(b.Data), null, BlockStyles.Normalize(b.Style));
         }
         catch (System.Text.Json.JsonException)
         {
@@ -165,6 +165,7 @@ public sealed partial class PageEditor(IDbContextFactory<SiteDbContext> dbFactor
             Type = b.Type,
             Order = (i + 1) * 10,
             IsVisible = b.IsVisible,
+            Style = b.Style,
             Data = b.Data,
         }).ToList(),
     };
@@ -199,6 +200,14 @@ public sealed partial class PageEditor(IDbContextFactory<SiteDbContext> dbFactor
         await using var db = await dbFactory.CreateDbContextAsync();
         var block = await DraftBlockOrThrow(db, blockId);
         block.IsVisible = visible;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SetBlockStyleAsync(int blockId, string style)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var block = await DraftBlockOrThrow(db, blockId);
+        block.Style = BlockStyles.Normalize(style);
         await db.SaveChangesAsync();
     }
 

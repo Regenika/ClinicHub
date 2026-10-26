@@ -38,6 +38,7 @@
                 <label for="d-role">Специальность и стаж</label>
                 <InputText id="d-role" @bind-Value="form.Role" placeholder="Врач-косметолог · стаж 10 лет" />
             </div>
+            <MediaPicker Id="d-photo" Label="Фото" Hint="Портрет 4:5, лицо по центру." @bind-Value="form.PhotoId" />
             <fieldset class="field">
                 <legend>Услуги, которые ведёт врач (ни одной — все)</legend>
                 @foreach (var s in services)

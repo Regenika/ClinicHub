@@ -1,0 +1,92 @@
+@* Кадрирование картинки: точка интереса и приближение, с превью во всех рамках сайта, где картинка может стоять.
+   Без JavaScript: ползунки, превью обновляется сразу (интерактивный режим админки). *@
+
+<div class="card framing stack">
+    <div class="admin-head">
+        <h2 class="h3">Кадр: @Media.FileName</h2>
+        <button type="button" class="btn btn--outline btn--sm" @onclick="OnClose">Закрыть</button>
+    </div>
+    <p class="muted small">
+        Картинка заполняет рамку блока, лишнее обрезается. Укажите, что должно остаться в кадре (например, лицо),
+        и при необходимости приблизьте. Настройка действует во всех блоках, где стоит эта картинка.
+    </p>
+
+    <div class="framing__controls">
+        <label class="field">
+            <span>Точка интереса по горизонтали: @(x)% (@Horizontal)</span>
+            <input type="range" min="0" max="100" step="1" value="@x" @oninput="e => x = Parse(e, 50)" />
+        </label>
+        <label class="field">
+            <span>По вертикали: @(y)% (@Vertical)</span>
+            <input type="range" min="0" max="100" step="1" value="@y" @oninput="e => y = Parse(e, 50)" />
+        </label>
+        <label class="field">
+            <span>Приближение: @(zoom)%</span>
+            <input type="range" min="100" max="300" step="5" value="@zoom" @oninput="e => zoom = Parse(e, 100)" />
+        </label>
+    </div>
+
+    <div class="framing__source">
+        <span class="muted small">Вся картинка, точка интереса — крестик</span>
+        <div class="framing__whole">
+            <img src="@Media.Url" alt="" />
+            <span class="framing__dot" style="left:@(x)%;top:@(y)%"></span>
+        </div>
+    </div>
+
+    <div class="framing__previews">
+        @foreach (var (title, css) in Frames)
+        {
+            <figure class="framing__preview">
+                <div class="photo-frame @css"><img class="cover" src="@Media.Url" alt="" style="@Media.FrameStyle(x, y, zoom)" /></div>
+                <figcaption class="muted small">@title</figcaption>
+            </figure>
+        }
+    </div>
+
+    <div class="row-wrap">
+        <button type="button" class="btn btn--primary" @onclick="SaveAsync">Сохранить кадр</button>
+        <button type="button" class="btn btn--outline" @onclick="Reset">По центру, без приближения</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MediaInfo Media { get; set; } = default!;
+    [Parameter] public EventCallback<(int X, int Y, int Zoom)> OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Рамки сайта (классы из app.css): обложка, врач, «до и после», картинка в тексте.</summary>
+    private static readonly (string Title, string Css)[] Frames =
+    [
+        ("Обложка, компьютер", "frame--hero"),
+        ("Обложка, телефон", "frame--hero-mobile"),
+        ("Фото врача", "frame--doctor"),
+        ("«До и после»", "frame--result"),
+        ("Картинка в тексте", "frame--text"),
+    ];
+
+    private int x;
+    private int y;
+    private int zoom;
+
+    protected override void OnParametersSet()
+    {
+        x = Media.FocusX;
+        y = Media.FocusY;
+        zoom = Media.Zoom;
+    }
+
+    private string Horizontal => x < 34 ? "левее" : x > 66 ? "правее" : "по центру";
+    private string Vertical => y < 34 ? "выше" : y > 66 ? "ниже" : "по центру";
+
+    private static int Parse(ChangeEventArgs e, int fallback) => int.TryParse(e.Value as string, out var v) ? v : fallback;
+
+    private void Reset()
+    {
+        x = 50;
+        y = 50;
+        zoom = 100;
+    }
+
+    private Task SaveAsync() => OnSave.InvokeAsync((x, y, zoom));
+}

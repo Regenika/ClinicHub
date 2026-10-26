@@ -51,6 +51,26 @@
             </div>
             <Field Label="Адрес сайта для поисковиков (пусто — по адресу запроса; перед публикацией заполнить)" @bind-Value="form.BaseUrl" Placeholder="https://regenika.ru" />
 
+            <h2 class="h3">Цвета сайта</h2>
+            <p class="muted small">
+                Три цвета задают весь сайт: оттенки для наведения, светлых фонов и приглушённого текста считаются из них.
+                Фон отдельного блока выбирается в редакторе страниц из вариантов этой палитры.
+            </p>
+            <div class="admin-form__row">
+                <ColorField Label="Основной (кнопки, ссылки, акценты)" Default="@Theme.DefaultAccent" @bind-Value="form.AccentColor" />
+                <ColorField Label="Фон страницы" Default="@Theme.DefaultBackground" @bind-Value="form.BackgroundColor" />
+                <ColorField Label="Текст" Default="@Theme.DefaultText" @bind-Value="form.TextColor" />
+            </div>
+            <div class="theme-preview" style="background:@Color(form.BackgroundColor, Theme.DefaultBackground);color:@Color(form.TextColor, Theme.DefaultText)">
+                <span>Так выглядит текст на фоне страницы.</span>
+                <span class="theme-preview__btn" style="background:@Color(form.AccentColor, Theme.DefaultAccent)">Кнопка</span>
+                <span style="color:@Color(form.AccentColor, Theme.DefaultAccent)">Ссылка</span>
+            </div>
+            @foreach (var w in Theme.ContrastWarnings(form.AccentColor, form.BackgroundColor, form.TextColor))
+            {
+                <p class="notice">@w</p>
+            }
+
             @if (saved)
             {
                 <p class="notice" role="status">Сохранено. На этом компьютере уже видно, на других — в течение 30 секунд.</p>
@@ -69,8 +89,14 @@
 
     protected override async Task OnInitializedAsync() => form = await Catalog.SettingsAsync();
 
+    /// <summary>Цвет для превью: только проверенный #RRGGBB, иначе — по умолчанию (в style ничего постороннего не попадёт).</summary>
+    private static string Color(string? value, string fallback) => Theme.Parse(value) is not null ? value! : fallback;
+
     private async Task SaveAsync()
     {
+        saved = false;
+        if (!Theme.IsValid(form!.AccentColor) || !Theme.IsValid(form.BackgroundColor) || !Theme.IsValid(form.TextColor))
+            return;
         busy = true;
         await Catalog.SaveSettingsAsync(form!);
         busy = false;

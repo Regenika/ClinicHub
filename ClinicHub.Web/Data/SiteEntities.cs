@@ -64,6 +64,9 @@ public sealed class Block
 
     /// <summary>Настройки блока, JSON. Цены и сведения об услугах сюда не кладём: их даёт каталог (ADR-0007 §2).</summary>
     public string Data { get; set; } = "{}";
+
+    /// <summary>Фон блока из палитры сайта: пусто — как задумано в блоке, иначе ключ из <see cref="Blocks.BlockStyles"/>.</summary>
+    public string Style { get; set; } = "";
 }
 
 /// <summary>Общие настройки сайта (ADR-0007 §3). В таблице одна запись.</summary>
@@ -91,6 +94,11 @@ public sealed class SiteSettings
     public string ProDoktorovRating { get; set; } = "";
     public string YandexMapsUrl { get; set; } = "";
     public string YandexMapsRating { get; set; } = "";
+
+    // Палитра сайта: «#RRGGBB» или пусто — цвет из дизайна (wwwroot/app.css). Оттенки считаются из них (Site/Theme.cs).
+    public string AccentColor { get; set; } = "";
+    public string BackgroundColor { get; set; } = "";
+    public string TextColor { get; set; } = "";
 
     public DateTime UpdatedAt { get; set; }
 }

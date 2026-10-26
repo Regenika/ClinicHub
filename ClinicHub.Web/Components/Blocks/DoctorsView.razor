@@ -7,7 +7,14 @@
         @foreach (var d in Catalog.Doctors.Pick(Settings.DoctorIds, x => x.Id))
         {
             <article class="doctor">
-                <div class="photo-slot photo-slot--doctor" role="img" aria-label="Место для фотографии врача">[ФОТО ВРАЧА]</div>
+                @if (photos.Contains(d.Id))
+                {
+                    <div class="photo-frame photo-slot--doctor"><MediaImg Id="d.PhotoId" CssClass="cover" /></div>
+                }
+                else
+                {
+                    <div class="photo-slot photo-slot--doctor" role="img" aria-label="Место для фотографии врача">[ФОТО ВРАЧА]</div>
+                }
                 <h3 class="h3">@d.Name</h3>
                 <p class="muted">@d.Role</p>
                 <a href="/zapis?doctor=@d.Id">Записаться к врачу</a>
@@ -21,4 +28,14 @@
     [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
 
     private string TitleId => Settings.Anchor + "-title";
+
+    [Inject] private MediaLibrary Media { get; set; } = default!;
+    /// <summary>Врачи, у которых фото есть в медиатеке.</summary>
+    private HashSet<string> photos = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var media = await Media.ListAsync();
+        photos = Catalog.Doctors.Where(d => d.PhotoId is { } id && media.Any(m => m.Id == id)).Select(d => d.Id).ToHashSet();
+    }
 }

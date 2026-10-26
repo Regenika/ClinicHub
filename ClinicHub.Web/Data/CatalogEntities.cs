@@ -31,6 +31,8 @@ public sealed class CatalogDoctor
     public string Name { get; set; } = "";
     /// <summary>Специальность и стаж одной строкой.</summary>
     public string Role { get; set; } = "";
+    /// <summary>Фото из медиатеки. Удалили картинку — фото пропадает, на сайте снова место для фото.</summary>
+    public int? PhotoId { get; set; }
 
     public bool IsVisible { get; set; } = true;
     public int Order { get; set; }
