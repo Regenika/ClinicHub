@@ -1,0 +1,82 @@
+# Автопроверка PR (Issue #42). Секретов здесь нет и быть не должно: тесты работают на EF InMemory,
+# проверка миграций строит модель без подключения к базе.
+name: Проверка
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Новый коммит в ту же ветку отменяет ещё идущую проверку предыдущего.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  server:
+    name: Сервер, сайт, тесты, миграции
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Инструмент dotnet-ef (та же версия, что у EF в проектах)
+        run: dotnet tool install --global dotnet-ef --version 10.0.12
+
+      - name: Сборка Core, Api, тестов
+        run: dotnet build ClinicHub.Api.Tests/ClinicHub.Api.Tests.csproj -c Release
+
+      - name: Сборка сайта
+        run: dotnet build ClinicHub.Web/ClinicHub.Web.csproj -c Release
+
+      - name: Тесты
+        run: dotnet test ClinicHub.Api.Tests/ClinicHub.Api.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
+      # Модель EF в коде должна совпадать со снапшотом миграций: иначе кто-то поменял сущность и забыл
+      # создать миграцию. Проверяем каждый проект, где есть миграции (сервер, а после приёма ветки сайта — и сайт).
+      - name: Миграции совпадают с моделью
+        run: |
+          set -euo pipefail
+          checked=0
+          for project in ClinicHub.Api ClinicHub.Web; do
+            if find "$project" -name '*ModelSnapshot.cs' -not -path '*/obj/*' -not -path '*/bin/*' | grep -q .; then
+              echo "== $project"
+              dotnet ef migrations has-pending-model-changes --project "$project" --configuration Release --no-build
+              checked=$((checked + 1))
+            fi
+          done
+          if [ "$checked" -eq 0 ]; then
+            echo "Не найдено ни одного снапшота миграций — проверка ничего не проверила." >&2
+            exit 1
+          fi
+
+  apps:
+    name: Полная сборка решения (Windows, MAUI)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Admin и SmsAgent — MAUI (Android, iOS, Mac Catalyst, Windows). Собираются только на Windows/Mac.
+      - name: Нагрузка MAUI
+        run: dotnet workload install maui
+
+      - name: Сборка ClinicHub.slnx
+        run: dotnet build ClinicHub.slnx -c Release

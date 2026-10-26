@@ -17,8 +17,7 @@
 ## В работе сейчас (обновлять при старте/завершении ветки)
 | Ветка | Кто | Меняет схему БД? | Суть |
 |---|---|---|---|
-| feature/care-scenarios | AlDanosAl | **да** (таблицы сценариев и напоминаний) | PLAN 1.10, Issue #14. От `master` (#20 и #26 приняты 19.10). Пока не принята, миграции сервера никто другой не трогает |
-| feature/integrations-dikidi | AlDanosAl | **да** (колонка `Patients.Source`) | PLAN 1.11, Issue #15. **От `feature/care-scenarios`** (сложенный PR): миграция `PatientSource` идёт после `CareScenarios` |
+| feature/ci-checks | AlDanosAl | нет | Issue #42: автопроверка PR в GitHub Actions |
 
 ---
 

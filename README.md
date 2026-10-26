@@ -1,5 +1,9 @@
 # ClinicHub — рассылка SMS для клиники
 
+[![Проверка](https://github.com/Regenika/ClinicHub/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Regenika/ClinicHub/actions/workflows/ci.yml)
+
+Каждый PR и каждый push в `master` автоматически проверяются (`.github/workflows/ci.yml`): сборка всего решения, тесты, совпадение миграций EF с моделью.
+
 Из чего состоит:
 
 | Проект | Что это |
