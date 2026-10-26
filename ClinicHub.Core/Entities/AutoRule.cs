@@ -10,6 +10,9 @@ public class AutoRule
     public string Name { get; set; } = "";
     public AutoRuleTrigger Trigger { get; set; } = AutoRuleTrigger.Birthday;
 
+    /// <summary>Поздравление со скидкой — реклама, поэтому по умолчанию Marketing.</summary>
+    public MessagePurpose Purpose { get; set; } = MessagePurpose.Marketing;
+
     /// <summary>Шаблон текста. Плейсхолдер {name} заменяется на ФИО пациента.</summary>
     public string TextTemplate { get; set; } = "";
 

@@ -150,7 +150,7 @@ if ($quiet) {
         $a = $rem | Where-Object { $_.id -eq $r2[0].id }
         $b = $rem | Where-Object { $_.id -eq $applied[0].id }
     } while (($a.status -eq "Planned" -or $b.status -eq "Planned") -and (Get-Date) -lt $deadline)
-    Check ($b.status -eq "Skipped" -and $b.statusReason -like "*согласий*") "рекламное пропущено: $($b.statusReason)"
+    Check ($b.status -eq "Skipped" -and $b.statusReason -like "*отписан*") "рекламное пропущено (пациент отписан): $($b.statusReason)"
     Check ($a.status -eq "Skipped" -and $a.statusReason -like "*отписан*") "отписанному не отправлено: $($a.statusReason)"
     Check ($null -eq $a.requestId -and $null -eq $b.requestId) "заявок на отправку не создано"
 }

@@ -45,6 +45,7 @@ public static class RequestsEndpoints
             {
                 Id = r.Id,
                 Type = r.Type.ToString(),
+                Purpose = r.Purpose.ToString(),
                 Title = r.Title,
                 Status = r.Status.ToString(),
                 SendMode = r.SendMode.ToString(),
@@ -55,6 +56,7 @@ public static class RequestsEndpoints
                 RecipientCount = r.Recipients.Count,
                 SentCount = r.Recipients.Count(x => x.Status == RecipientStatus.Sent),
                 FailedCount = r.Recipients.Count(x => x.Status == RecipientStatus.Failed),
+                SkippedCount = r.Recipients.Count(x => x.Status == RecipientStatus.Skipped),
             })
             .ToListAsync();
 
@@ -69,6 +71,7 @@ public static class RequestsEndpoints
             {
                 Id = r.Id,
                 Type = r.Type.ToString(),
+                Purpose = r.Purpose.ToString(),
                 Title = r.Title,
                 Status = r.Status.ToString(),
                 SendMode = r.SendMode.ToString(),
@@ -79,6 +82,7 @@ public static class RequestsEndpoints
                 RecipientCount = r.Recipients.Count,
                 SentCount = r.Recipients.Count(x => x.Status == RecipientStatus.Sent),
                 FailedCount = r.Recipients.Count(x => x.Status == RecipientStatus.Failed),
+                SkippedCount = r.Recipients.Count(x => x.Status == RecipientStatus.Skipped),
                 Recipients = r.Recipients.Select(rec => new RecipientOutDto
                 {
                     Id = rec.Id,
@@ -91,6 +95,7 @@ public static class RequestsEndpoints
                     SendAfter = rec.SendAfter,
                     Status = rec.Status.ToString(),
                     SentAt = rec.SentAt,
+                    SkipReason = rec.SkipReason,
                 }).ToList(),
             })
             .FirstOrDefaultAsync();
@@ -104,6 +109,9 @@ public static class RequestsEndpoints
         IHttpContextAccessor http,
         CancellationToken ct)
     {
+        if (PurposeError(dto) is { } purposeError)
+            return Results.BadRequest(purposeError);
+
         var request = await CreateRequestCoreAsync(
             dto, db, http.HttpContext?.User.GetUserId(),
             approveAutomatically: false, ct);
@@ -113,6 +121,15 @@ public static class RequestsEndpoints
 
         return Results.Created($"/api/requests/{request.Id}", ToOutDto(request));
     }
+
+    /// <summary>
+    /// Цель обязательна для новых заявок (Issue #34): от неё зависит, нужна ли проверка согласия на рекламу.
+    /// </summary>
+    public static string? PurposeError(CreateSmsRequestDto dto) =>
+        dto.Purpose is { } p && Enum.IsDefined(p)
+            ? null
+            : "Укажите purpose: Service — напоминание о записи, перенос, контроль после визита; " +
+              "Marketing — реклама (акции, поздравления со скидкой), уйдёт только пациентам с согласием на рекламу.";
 
     /// <summary>Общая логика создания заявки (используется и вебхуком). Возвращает null, если валидация не прошла.</summary>
     public static async Task<SmsRequest?> CreateRequestCoreAsync(
@@ -148,6 +165,8 @@ public static class RequestsEndpoints
         var request = new SmsRequest
         {
             Type = dto.Type,
+            // Без цели считаем рекламой: лучше не отправить, чем нарушить закон «О рекламе».
+            Purpose = dto.Purpose ?? MessagePurpose.Marketing,
             Title = string.IsNullOrWhiteSpace(dto.Title)
                 ? $"SMS-заявка {now:dd.MM.yyyy HH:mm}"
                 : dto.Title,
@@ -296,6 +315,7 @@ public static class RequestsEndpoints
                 Total = r.Recipients.Count,
                 Sent = r.Recipients.Count(x => x.Status == RecipientStatus.Sent),
                 Failed = r.Recipients.Count(x => x.Status == RecipientStatus.Failed),
+                Skipped = r.Recipients.Count(x => x.Status == RecipientStatus.Skipped),
                 InQueue = r.Recipients.Count(x => x.Status == RecipientStatus.Scheduled ||
                                                     x.Status == RecipientStatus.Sending),
             })
@@ -308,6 +328,7 @@ public static class RequestsEndpoints
     {
         Id = r.Id,
         Type = r.Type.ToString(),
+        Purpose = r.Purpose.ToString(),
         Title = r.Title,
         Status = r.Status.ToString(),
         SendMode = r.SendMode.ToString(),
@@ -318,5 +339,6 @@ public static class RequestsEndpoints
         RecipientCount = r.Recipients.Count,
         SentCount = r.Recipients.Count(x => x.Status == RecipientStatus.Sent),
         FailedCount = r.Recipients.Count(x => x.Status == RecipientStatus.Failed),
+        SkippedCount = r.Recipients.Count(x => x.Status == RecipientStatus.Skipped),
     };
 }
