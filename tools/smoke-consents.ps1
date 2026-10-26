@@ -138,12 +138,18 @@ if (-not $WebhookKey) {
     $site = @{ phone = "8 (999) 004-$($stamp.Substring(2,2))-$($stamp.Substring(4,2))"; name = "Тестов Сайт $stamp"; channels = @("Sms", "Telegram"); evidenceRef = "booking-smoke-$stamp" }
     Call POST "/api/consents/site" $site -Anon -Expect 401 -Title "без ключа -> 401" | Out-Null
     $s1 = Call POST "/api/consents/site" $site -Anon -Headers @{ "X-Webhook-Api-Key" = $WebhookKey } -Title "согласие с сайта: новый пациент"
-    Check ($s1.patientCreated -and @($s1.records).Count -eq 2) "пациент создан, записей две (SMS и Telegram)"
-    $s2 = Call POST "/api/consents/site" $site -Anon -Headers @{ "X-Webhook-Api-Key" = $WebhookKey } -Title "повтор с тем же телефоном"
-    Check (-not $s2.patientCreated -and $s2.patientId -eq $s1.patientId) "пациент найден по телефону, второй не создан"
-    $site["phone"] = "12345"
-    Call POST "/api/consents/site" $site -Anon -Headers @{ "X-Webhook-Api-Key" = $WebhookKey } -Expect 400 -Title "плохой телефон -> 400" | Out-Null
-    Call DELETE "/api/patients/$($s1.patientId)" -Expect 204 -Title "уборка: пациент с сайта" | Out-Null
+    if (-not $s1) {
+        Write-Host "      ключ не подошёл — дальше по сайту не проверяем. Возьмите ключ из журнала сервера (строка «Webhook API-ключ») после перезапуска и передайте -WebhookKey" -ForegroundColor Red
+    } else {
+        Check ($s1.patientCreated -and @($s1.records).Count -eq 2) "пациент создан, записей две (SMS и Telegram)"
+        $s2 = Call POST "/api/consents/site" $site -Anon -Headers @{ "X-Webhook-Api-Key" = $WebhookKey } -Title "повтор с тем же телефоном"
+        Check ($s2 -and -not $s2.patientCreated -and $s2.patientId -eq $s1.patientId) "пациент найден по телефону, второй не создан"
+        $c = Call GET "/api/patients/$($s1.patientId)/consents" -Title "журнал пациента с сайта"
+        Check (@($c.journal | Where-Object { $_.source -eq "Site" -and $_.evidenceRef -eq "booking-smoke-$stamp" }).Count -eq 4) "в журнале 4 записи с сайта (2 канала × 2 раза)"
+        $site["phone"] = "12345"
+        Call POST "/api/consents/site" $site -Anon -Headers @{ "X-Webhook-Api-Key" = $WebhookKey } -Expect 400 -Title "плохой телефон -> 400" | Out-Null
+        Call DELETE "/api/patients/$($s1.patientId)" -Expect 204 -Title "уборка: пациент с сайта" | Out-Null
+    }
 }
 
 Write-Host "== Уборка"

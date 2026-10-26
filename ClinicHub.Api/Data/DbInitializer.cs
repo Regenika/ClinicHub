@@ -159,7 +159,9 @@ public static class DbInitializer
 
         await db.SaveChangesAsync();
 
-        var webhookKey = settings["WebhookApiKey"];
+        // Ключ из базы, а не из словаря выше: там при каждом запуске новый случайный, который в базу
+        // попадает только в самый первый раз. Раньше в журнал писался именно он — и не подходил к вебхуку.
+        var webhookKey = (await db.AppSettings.FindAsync("WebhookApiKey"))?.Value;
         if (!string.IsNullOrWhiteSpace(webhookKey))
             logger.LogInformation("Webhook API-ключ для сайта клиники: {Key}", webhookKey);
     }
