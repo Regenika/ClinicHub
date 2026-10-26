@@ -549,7 +549,9 @@ public partial class CreateRequestPage : ContentPage
         {
             Type = type,
             SendMode = mode,
-            PlannedSendAt = plannedSendAt,
+            // Пользователь вводит время по своим часам, а сервер хранит и сравнивает UTC.
+            // Без перевода время уходило без пояса, сервер считал его UTC, и рассылка уходила на 3 часа позже.
+            PlannedSendAt = plannedSendAt?.ToUniversalTime(),
             TextTemplate = commonText,
             Recipients = _selectedPatients.Select(p => new RecipientInputDto
             {
