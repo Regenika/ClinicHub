@@ -1,10 +1,11 @@
 @page "/zapis"
 @using ClinicHub.Core
-@inject IOptionsSnapshot<SiteContent> Content
+@inject ISiteCatalog Catalog
+@inject SiteStore Store
 @inject IBookingSource Source
 @inject TimeProvider Clock
 
-<Seo Title="@($"Онлайн-запись — {Content.Value.Clinic.Name}")"
+<Seo Title="@($"Онлайн-запись — {clinic.Name}")"
      Description="Запись к врачу-косметологу онлайн: выберите услугу, врача и свободное время."
      Path="/zapis" />
 
@@ -213,7 +214,7 @@
 
     [SupplyParameterFromForm(FormName = "booking")] private BookingForm? Form { get; set; }
 
-    private SiteContent site = default!;
+    private ClinicInfo clinic = new();
     private ServiceItem? service;
     private DoctorItem? doctor;
     private DateOnly? date;
@@ -234,12 +235,12 @@
     protected override async Task OnInitializedAsync()
     {
         Form ??= new BookingForm();
-        site = Content.Value;
-        service = site.Services.FirstOrDefault(s => s.Id == ServiceId);
-        doctor = site.Doctors.FirstOrDefault(d => d.Id == Doctor);
+        clinic = await Store.GetClinicAsync();
+        service = Catalog.Services.FirstOrDefault(s => s.Id == ServiceId);
+        doctor = Catalog.Doctors.FirstOrDefault(d => d.Id == Doctor);
 
         // Врач, который не ведёт выбранную услугу, — сбрасываем выбор врача.
-        if (service is not null && doctor is not null && !Treats(doctor, service.Id))
+        if (service is not null && doctor is not null && !doctor.Treats(service.Id))
         {
             hint = $"{doctor.Name} не ведёт услугу «{service.Name}». Выберите другого врача или «Любой свободный».";
             doctor = null;
@@ -309,14 +310,12 @@
         step = 5;
     }
 
-    private bool Treats(DoctorItem d, string serviceId) => d.ServiceIds.Count == 0 || d.ServiceIds.Contains(serviceId);
-
     private IEnumerable<ServiceItem> ServicesForDoctor() =>
-        doctor is null ? site.Services : site.Services.Where(s => Treats(doctor, s.Id));
+        doctor is null ? Catalog.Services : Catalog.Services.Where(s => doctor.Treats(s.Id));
 
-    private IEnumerable<DoctorItem> DoctorsForService() => site.Doctors.Where(d => Treats(d, service!.Id));
+    private IEnumerable<DoctorItem> DoctorsForService() => Catalog.Doctors.Where(d => d.Treats(service!.Id));
 
-    private string DoctorName(string id) => site.Doctors.FirstOrDefault(d => d.Id == id)?.Name ?? "—";
+    private string DoctorName(string id) => Catalog.Doctors.FirstOrDefault(d => d.Id == id)?.Name ?? "—";
 
     private static string ChannelName(ReminderChannel ch) => ch switch
     {

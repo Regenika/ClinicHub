@@ -1,0 +1,24 @@
+@* Блок «Врачи»: врачи из каталога, блок хранит только выбор. *@
+@inject ISiteCatalog Catalog
+
+<section id="@Settings.Anchor" class="container section stack-lg" aria-labelledby="@TitleId">
+    <h2 id="@TitleId" class="h2">@Settings.Title</h2>
+    <div class="cards">
+        @foreach (var d in Catalog.Doctors.Pick(Settings.DoctorIds, x => x.Id))
+        {
+            <article class="doctor">
+                <div class="photo-slot photo-slot--doctor" role="img" aria-label="Место для фотографии врача">[ФОТО ВРАЧА]</div>
+                <h3 class="h3">@d.Name</h3>
+                <p class="muted">@d.Role</p>
+                <a href="/zapis?doctor=@d.Id">Записаться к врачу</a>
+            </article>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public DoctorsBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private string TitleId => Settings.Anchor + "-title";
+}

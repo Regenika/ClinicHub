@@ -1,0 +1,138 @@
+@page "/nastroika-bd"
+@layout SetupLayout
+@using ClinicHub.Web.Data
+@inject DbConnectionStore Db
+@inject NavigationManager Nav
+
+@* Подключение к SQL Server по адресу, логину и паролю. Открывается только на компьютере, где стоит сайт:
+   с других устройств сети менять подключение нельзя. Поля названы как обычная форма входа
+   (autocomplete username / current-password), поэтому браузер предлагает сохранить логин и пароль. *@
+
+<PageTitle>Подключение к базе данных — ClinicHub</PageTitle>
+<HeadContent>
+    <meta name="robots" content="noindex" />
+</HeadContent>
+
+<section class="container section stack setup">
+    <h1 class="display display--md">Подключение к базе данных</h1>
+
+    @if (!isLocal)
+    {
+        <p class="notice" role="note">
+            @(Db.State == DbState.Ready ? "Подключение к базе данных" : "Сайт ещё не подключён к базе данных. Подключение")
+            можно настроить только на компьютере, где установлен сайт:
+            откройте на нём <b>http://localhost:@(HttpContext?.Request.Host.Port)@DbConnectionStore.SetupPath</b>.
+        </p>
+    }
+    else if (Db.IsFromConfiguration)
+    {
+        <p class="notice" role="note">
+            Подключение задано в настройках сайта (ConnectionStrings:ClinicHub: user-secrets или переменная окружения),
+            поэтому здесь его поменять нельзя.
+        </p>
+        @if (Db.LastError is { } error)
+        {
+            <div class="form-errors" role="alert">@error</div>
+        }
+    }
+    else
+    {
+        @if (Db.State == DbState.Ready)
+        {
+            <p class="muted-strong">Сайт подключён к базе. Здесь можно поменять сервер, логин или пароль.</p>
+        }
+        else
+        {
+            <p class="muted-strong">
+                Укажите сервер SQL Server, на котором будет храниться сайт. Если базы ещё нет, сайт создаст её сам,
+                для этого логину нужно право создавать базы (dbcreator). Таблицы сайта лежат в схеме <code>site</code>.
+            </p>
+        }
+
+        <EditForm Model="Form" FormName="db-setup" OnSubmit="SaveAsync" class="stack setup__form" novalidate>
+            @if (errors.Count > 0)
+            {
+                <div class="form-errors" role="alert">
+                    <ul>
+                        @foreach (var e in errors)
+                        {
+                            <li>@e</li>
+                        }
+                    </ul>
+                </div>
+            }
+            <div class="field">
+                <label for="db-server">Сервер</label>
+                <InputText id="db-server" autocomplete="on" spellcheck="false"
+                           placeholder="192.168.1.10\SQLEXPRESS" @bind-Value="Form!.Server" />
+                <span class="muted small">Имя или IP-адрес компьютера с SQL Server, через «\» — имя экземпляра, через запятую — порт: <code>sql-server,1433</code>.</span>
+            </div>
+            <div class="field">
+                <label for="db-name">База данных</label>
+                <InputText id="db-name" autocomplete="off" spellcheck="false" @bind-Value="Form.Database" />
+            </div>
+            <div class="field">
+                <label for="db-login">Логин</label>
+                <InputText id="db-login" autocomplete="username" spellcheck="false" @bind-Value="Form.Login" />
+                <span class="muted small">Пусто — вход Windows от имени службы сайта (тогда на сервере нужен логин для этого компьютера).</span>
+            </div>
+            <div class="field">
+                <label for="db-password">Пароль</label>
+                <InputText id="db-password" type="password" autocomplete="current-password" @bind-Value="Form.Password" />
+            </div>
+            <label class="check">
+                <InputCheckbox @bind-Value="Form.TrustServerCertificate" />
+                <span>Доверять сертификату сервера. В локальной сети клиники обычно нужно: у SQL Server самоподписанный сертификат.</span>
+            </label>
+            <button class="btn btn--primary btn--lg" type="submit">Проверить и сохранить</button>
+        </EditForm>
+
+        <p class="muted small">
+            Пароль хранится на этом компьютере в зашифрованном виде (в папке сайта <code>config</code>), прочитать его может только служба сайта.
+            Браузер может предложить запомнить логин и пароль: так их не придётся вводить заново, если подключение понадобится поменять.
+        </p>
+    }
+</section>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm(FormName = "db-setup")] private DbConnectionForm? Form { get; set; }
+
+    private bool isLocal;
+    private readonly List<string> errors = [];
+
+    protected override void OnInitialized()
+    {
+        isLocal = HttpContext?.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip);
+        if (!isLocal && Db.State != DbState.Ready && HttpContext is not null)
+            HttpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+
+        // Первый показ: подставляем сохранённые адрес и логин (без пароля). После отправки форма приходит из запроса.
+        Form ??= Db.ConnectionString is { } cs && !Db.IsFromConfiguration ? DbConnectionForm.FromConnectionString(cs) : new DbConnectionForm();
+        // Почему сайт не подключён (база недоступна, сохранённое подключение не расшифровалось). После отправки формы — свои ошибки.
+        if (Db.State != DbState.Ready && Db.LastError is { } error && HttpMethods.IsGet(HttpContext?.Request.Method ?? ""))
+            errors.Add(error);
+    }
+
+    private async Task SaveAsync()
+    {
+        errors.Clear();
+        if (!isLocal || Db.IsFromConfiguration)
+            return;
+        if (string.IsNullOrWhiteSpace(Form!.Server))
+            errors.Add("Укажите сервер.");
+        if (!string.IsNullOrWhiteSpace(Form.Login) && string.IsNullOrEmpty(Form.Password))
+            errors.Add("Укажите пароль.");
+        if (errors.Count == 0 && await Db.SaveAsync(Form) is { } error)
+            errors.Add(error);
+
+        if (errors.Count == 0)
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+        // Пароль обратно в страницу не отдаём.
+        Form.Password = null;
+    }
+}

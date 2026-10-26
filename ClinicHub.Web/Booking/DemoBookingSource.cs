@@ -1,5 +1,4 @@
 using ClinicHub.Web.Site;
-using Microsoft.Extensions.Options;
 
 namespace ClinicHub.Web.Booking;
 
@@ -8,7 +7,7 @@ namespace ClinicHub.Web.Booking;
 /// пн–сб, 10:00–19:00 по Москве, шаг равен длительности услуги, часть окон «занята».
 /// Расписание детерминированное, поэтому одно и то же время не пропадает между шагами записи.
 /// </summary>
-public sealed class DemoBookingSource(IOptionsMonitor<SiteContent> content, TimeProvider clock) : IBookingSource
+public sealed class DemoBookingSource(ISiteCatalog catalog, TimeProvider clock) : IBookingSource
 {
     private static readonly TimeOnly DayStart = new(10, 0);
     private static readonly TimeOnly DayEnd = new(19, 0);
@@ -18,13 +17,12 @@ public sealed class DemoBookingSource(IOptionsMonitor<SiteContent> content, Time
     public Task<IReadOnlyList<BookingSlot>> GetSlotsAsync(
         string serviceId, string? doctorId, DateOnly date, CancellationToken ct = default)
     {
-        var site = content.CurrentValue;
-        var service = site.Services.FirstOrDefault(s => s.Id == serviceId);
+        var service = catalog.Services.FirstOrDefault(s => s.Id == serviceId);
         if (service is null || date.DayOfWeek == DayOfWeek.Sunday)
             return Task.FromResult<IReadOnlyList<BookingSlot>>([]);
 
-        var doctors = site.Doctors
-            .Where(d => d.ServiceIds.Count == 0 || d.ServiceIds.Contains(serviceId))
+        var doctors = catalog.Doctors
+            .Where(d => d.Treats(serviceId))
             .Where(d => doctorId is null || d.Id == doctorId)
             .ToList();
 

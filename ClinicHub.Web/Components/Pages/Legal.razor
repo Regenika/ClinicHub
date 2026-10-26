@@ -1,18 +1,24 @@
 @page "/politika"
 @page "/pravila"
 @inject NavigationManager Nav
-@inject IOptionsSnapshot<SiteContent> Content
+@inject SiteStore Store
 
 @{
     var isPolicy = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("politika", StringComparison.OrdinalIgnoreCase);
     var title = isPolicy ? "Политика обработки персональных данных" : "Правила оказания платных медицинских услуг";
 }
 
-<Seo Title="@($"{title} — {Content.Value.Clinic.Name}")" Description="@title" Path="@(isPolicy ? "/politika" : "/pravila")" />
+<Seo Title="@($"{title} — {clinic.Name}")" Description="@title" Path="@(isPolicy ? "/politika" : "/pravila")" />
 
 <article class="container section prose">
     <h1 class="display display--md">@title</h1>
     @* Текст готовит клиника вместе с юристом (PLAN, задача 0.5). До этого сайт наружу не публикуем. *@
     <p class="notice">[ТЕКСТ ДОКУМЕНТА: готовит клиника, PLAN 0.5]</p>
-    <p>@Content.Value.Clinic.LegalName, лицензия @Content.Value.Clinic.License.</p>
+    <p>@clinic.LegalName, лицензия @clinic.License.</p>
 </article>
+
+@code {
+    private ClinicInfo clinic = new();
+
+    protected override async Task OnInitializedAsync() => clinic = await Store.GetClinicAsync();
+}

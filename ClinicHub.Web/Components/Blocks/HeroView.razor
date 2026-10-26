@@ -1,0 +1,34 @@
+@* Блок «Обложка». *@
+
+<section class="container hero" aria-labelledby="hero-title">
+    <div class="hero__text">
+        <p class="eyebrow">@(string.IsNullOrEmpty(Settings.Eyebrow) ? $"{Clinic.Tagline} · {Clinic.City}" : Settings.Eyebrow)</p>
+        <h1 id="hero-title" class="display">@Settings.Title</h1>
+        <p class="lead">@Settings.Lead</p>
+        <div class="row-wrap">
+            <a class="btn btn--primary btn--lg" href="@PrimaryHref">@Settings.PrimaryText</a>
+            @if (!string.IsNullOrEmpty(Settings.TelegramText))
+            {
+                <a class="btn btn--outline btn--lg" href="@Clinic.TelegramUrl" rel="noopener">@Settings.TelegramText</a>
+            }
+        </div>
+        @if (Settings.ShowFacts)
+        {
+            <ul class="facts" aria-label="Коротко о клинике">
+                <li>м. @Clinic.Metro</li>
+                <li>@Clinic.Hours</li>
+                <li>Лицензия @Clinic.License</li>
+            </ul>
+        }
+    </div>
+    <div class="photo-slot hero__photo" role="img" aria-label="Место для фотографии интерьера клиники или кабинета врача">@Settings.PhotoNote</div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public HeroBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private string PrimaryHref => string.IsNullOrEmpty(Settings.PrimaryServiceId)
+        ? "/zapis"
+        : "/zapis?service=" + Uri.EscapeDataString(Settings.PrimaryServiceId);
+}

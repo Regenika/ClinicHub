@@ -1,7 +1,7 @@
 ﻿@inherits LayoutComponentBase
-@inject IOptionsSnapshot<SiteContent> Content
+@inject SiteStore Store
 
-@{ var c = Content.Value.Clinic; }
+@{ var c = clinic; }
 
 <a class="skip-link" href="#main">Перейти к содержимому</a>
 
@@ -51,3 +51,9 @@
         </p>
     </div>
 </footer>
+
+@code {
+    private ClinicInfo clinic = new();
+
+    protected override async Task OnInitializedAsync() => clinic = await Store.GetClinicAsync();
+}

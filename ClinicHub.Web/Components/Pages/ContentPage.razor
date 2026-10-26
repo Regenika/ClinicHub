@@ -1,0 +1,75 @@
+@page "/"
+@page "/{*Slug}"
+@using System.Text.Encodings.Web
+@using System.Text.Json
+@using System.Text.Unicode
+@inject SiteStore Store
+@inject NavigationManager Nav
+
+@* Страница из блоков (ADR-0007 §1): адрес ищется среди опубликованных страниц в БД.
+   Страницы с собственным кодом (/zapis, /politika) объявлены отдельно и имеют приоритет над этим маршрутом. *@
+
+@if (current is not null)
+{
+    <Seo Title="@current.Title" Description="@current.Description" Path="@current.Path">
+        @if (current.Path == "/")
+        {
+            <script type="application/ld+json">@((MarkupString)JsonLd(clinic))</script>
+        }
+    </Seo>
+
+    @foreach (var block in current.Blocks)
+    {
+        <DynamicComponent @key="block.Id" Type="@block.Type.ComponentType" Parameters="@Parameters(block)" />
+    }
+}
+
+@code {
+    [Parameter] public string? Slug { get; set; }
+
+    private PublishedPage? current;
+    private ClinicInfo clinic = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        clinic = await Store.GetClinicAsync();
+        current = await Store.GetPublishedAsync(Slug ?? "/");
+        if (current is null)
+            Nav.NotFound();
+    }
+
+    private Dictionary<string, object> Parameters(RenderedBlock block) => new()
+    {
+        ["Settings"] = block.Settings,
+        ["Clinic"] = clinic,
+    };
+
+    /// <summary>Микроразметка schema.org для поисковиков (PLAN, задача 4.2).</summary>
+    private static string JsonLd(ClinicInfo c)
+    {
+        var data = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "MedicalClinic",
+            ["name"] = c.Name,
+            ["legalName"] = c.LegalName,
+            ["telephone"] = c.Phone,
+            ["openingHours"] = c.Hours,
+            ["address"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "PostalAddress",
+                ["addressLocality"] = c.City,
+                ["streetAddress"] = c.Address,
+                ["addressCountry"] = "RU",
+            },
+            ["medicalSpecialty"] = "Dermatology",
+        };
+        // Кириллица как есть; < > & ' экранируются всегда, так что закрыть <script> изнутри нельзя.
+        return JsonSerializer.Serialize(data, JsonLdOptions);
+    }
+
+    private static readonly JsonSerializerOptions JsonLdOptions = new()
+    {
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
+    };
+}

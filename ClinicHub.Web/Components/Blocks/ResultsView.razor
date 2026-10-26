@@ -1,0 +1,26 @@
+@* Блок «До и после». *@
+
+<section id="@Settings.Anchor" class="band" aria-labelledby="@TitleId">
+    <div class="container split">
+        <div class="split__aside stack">
+            <h2 id="@TitleId" class="h2">@Settings.Title</h2>
+            <p class="muted-strong">@Settings.Intro</p>
+        </div>
+        <div class="split__main cards">
+            @foreach (var r in Settings.Items)
+            {
+                <figure class="result">
+                    <div class="photo-slot photo-slot--result" role="img" aria-label="Место для пары фото до и после">@r.ConsentNote</div>
+                    <figcaption class="muted small">@r.Caption</figcaption>
+                </figure>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ResultsBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private string TitleId => Settings.Anchor + "-title";
+}

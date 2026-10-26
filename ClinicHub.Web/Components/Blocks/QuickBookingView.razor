@@ -1,0 +1,32 @@
+@* Блок «Быстрая запись»: услуга и врач из каталога, дальше сразу шаг выбора времени. *@
+@inject ISiteCatalog Catalog
+
+<section class="container quick" aria-label="Быстрая запись">
+    <form class="quick__form card" method="get" action="/zapis">
+        <div class="field">
+            <label for="q-service">Услуга</label>
+            <select id="q-service" name="service">
+                @foreach (var s in Catalog.Services)
+                {
+                    <option value="@s.Id">@s.Name</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="q-doctor">Врач</label>
+            <select id="q-doctor" name="doctor">
+                <option value="@BookingQuery.AnyDoctor">Любой свободный</option>
+                @foreach (var d in Catalog.Doctors)
+                {
+                    <option value="@d.Id">@d.Name</option>
+                }
+            </select>
+        </div>
+        <button class="btn btn--dark quick__submit" type="submit">@Settings.ButtonText</button>
+    </form>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public QuickBookingBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+}
