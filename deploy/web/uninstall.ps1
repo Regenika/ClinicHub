@@ -23,6 +23,8 @@ Write-Host "Удаление сайта клиники (ClinicHub.Web)" -Foregro
 
 # Автообновление (auto-update.ps1) иначе поставило бы сайт обратно.
 if (Get-ScheduledTask -TaskName "ClinicHub Web Auto-Update" -ErrorAction SilentlyContinue) {
+    # Остановить идущий запуск: иначе начатая сборка доделается и поставит сайт заново уже после удаления.
+    Stop-ScheduledTask -TaskName "ClinicHub Web Auto-Update" -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName "ClinicHub Web Auto-Update" -Confirm:$false
     Write-Host "Автообновление выключено (папку C:\ClinicHub\Updater можно удалить)."
 }
