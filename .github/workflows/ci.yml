@@ -55,7 +55,8 @@ jobs:
       - name: Модель EF сервера совпадает с миграциями
         run: dotnet ef migrations has-pending-model-changes --project ClinicHub.Api --no-build
 
-      # У сайта своя схема (site) и свои миграции — проверяем, когда они есть в ветке.
+      # У сайта своя схема (site) и свои миграции (ClinicHub.Web/Data/Migrations в ветке сайта) — проверяем,
+      # как только в проекте появится снапшот модели, где бы он ни лежал.
       - name: Модель EF сайта совпадает с миграциями
-        if: hashFiles('ClinicHub.Web/Migrations/*.cs') != ''
+        if: hashFiles('ClinicHub.Web/**/*ModelSnapshot.cs') != ''
         run: dotnet ef migrations has-pending-model-changes --project ClinicHub.Web --no-build
