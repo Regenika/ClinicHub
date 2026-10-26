@@ -1,6 +1,411 @@
-@ClinicHub.Api_HostAddress = http://localhost:5112
+# Примеры запросов к серверу ClinicHub (Visual Studio 17.12+ или Rider: кнопка «Send request» над запросом).
+#
+# Окружение «dev» — в файле http-client.env.json рядом. Пароль администратора туда НЕ пишем:
+# создайте рядом файл http-client.env.json.user (он в .gitignore) с содержимым
+#   { "dev": { "adminPassword": "ваш пароль" } }
+# и выберите окружение «dev» в выпадающем списке над редактором.
+#
+# Порядок: сначала «Вход», дальше запросы можно выполнять сверху вниз — они используют ответы предыдущих.
+# Все пациенты здесь вымышленные (CLAUDE.md: персональные данные в репозиторий не кладём).
+# Время в запросах — UTC («…Z») или с поясом («…+03:00»). Время без пояса сервер считает UTC.
 
-GET {{ClinicHub.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### ── Вход ───────────────────────────────────────────────────────────────────
+
+# @name login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "login": "{{adminLogin}}", "password": "{{adminPassword}}" }
 
 ###
+@token = {{login.response.body.$.accessToken}}
+
+### Сервер жив
+GET {{host}}/api/health
+
+### ── Каталог: для сайта (без входа, только видимое) ─────────────────────────
+
+GET {{host}}/api/catalog/services
+
+###
+GET {{host}}/api/catalog/doctors
+
+###
+GET {{host}}/api/catalog/categories
+
+### ── Каталог: админка (роль Admin) ──────────────────────────────────────────
+
+# @name category
+POST {{host}}/api/catalog/admin/categories
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Инъекционная косметология", "sortOrder": 10, "isVisibleOnSite": true }
+
+###
+GET {{host}}/api/catalog/admin/categories
+Authorization: Bearer {{token}}
+
+###
+PUT {{host}}/api/catalog/admin/categories/{{category.response.body.$.id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Инъекции", "sortOrder": 10, "isVisibleOnSite": true }
+
+### Все услуги, включая скрытые
+GET {{host}}/api/catalog/admin/services
+Authorization: Bearer {{token}}
+
+### Новая услуга (в истории цен появится запись «— → от 3500»)
+POST {{host}}/api/catalog/admin/services
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id": "test-botox",
+  "categoryId": {{category.response.body.$.id}},
+  "name": "Тестовая услуга: ботулинотерапия",
+  "description": "Создана из .http-файла для проверки.",
+  "priceFrom": 3500,
+  "durationMinutes": 30,
+  "isVisibleOnSite": false,
+  "sortOrder": 100
+}
+
+### Меняем цену — в историю цен пишется «3500 → 4000»
+PUT {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "categoryId": {{category.response.body.$.id}},
+  "name": "Тестовая услуга: ботулинотерапия",
+  "description": "Цена поменялась.",
+  "priceFrom": 4000,
+  "durationMinutes": 30,
+  "isVisibleOnSite": false,
+  "sortOrder": 100
+}
+
+### Способ показа цены (решение в #26): From «от N ₽» | Exact «N ₽» | Range «от N до M ₽» | OnRequest | Free.
+### Единица — без цифр. В ответе priceText — готовая строка: «от 4 000 до 6 000 ₽ за зону».
+PUT {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "categoryId": {{category.response.body.$.id}},
+  "name": "Тестовая услуга: ботулинотерапия",
+  "description": "Цена диапазоном.",
+  "priceFrom": 4000,
+  "priceTo": 6000,
+  "priceDisplay": "Range",
+  "priceUnit": "за зону",
+  "durationMinutes": 30,
+  "isVisibleOnSite": false,
+  "sortOrder": 100
+}
+
+### Ошибка: цифры в единице (ожидается 400)
+PUT {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Тестовая услуга: ботулинотерапия", "priceFrom": 4000, "priceUnit": "за 2 зоны", "durationMinutes": 30 }
+
+###
+GET {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+
+### История цен услуги: создание, правка цены, смена способа показа (свежие сверху)
+GET {{host}}/api/catalog/admin/services/test-botox/price-history
+Authorization: Bearer {{token}}
+
+### Ошибка: неправильный id (ожидается 400)
+POST {{host}}/api/catalog/admin/services
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "id": "Ботокс 1", "name": "Плохой id", "durationMinutes": 30 }
+
+### Ошибка: без входа правка недоступна (ожидается 401)
+PUT {{host}}/api/catalog/admin/services/test-botox
+Content-Type: application/json
+
+{ "name": "Без входа", "durationMinutes": 30 }
+
+### Все врачи
+GET {{host}}/api/catalog/admin/doctors
+Authorization: Bearer {{token}}
+
+### Новый врач (вымышленный)
+POST {{host}}/api/catalog/admin/doctors
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id": "test-doctor",
+  "name": "Тестова Анна Петровна",
+  "role": "Врач-косметолог · стаж 5 лет",
+  "description": "",
+  "serviceIds": [ "consultation", "test-botox" ],
+  "isVisibleOnSite": false,
+  "sortOrder": 100
+}
+
+### Меняем список услуг врача (заменяется целиком)
+PUT {{host}}/api/catalog/admin/doctors/test-doctor
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Тестова Анна Петровна",
+  "role": "Врач-косметолог · стаж 5 лет",
+  "serviceIds": [ "consultation", "test-botox", "facial-care" ],
+  "isVisibleOnSite": false,
+  "sortOrder": 100
+}
+
+###
+GET {{host}}/api/catalog/admin/doctors/test-doctor
+Authorization: Bearer {{token}}
+
+### ── Визиты ─────────────────────────────────────────────────────────────────
+
+### Вымышленный пациент для проверки
+# @name patient
+POST {{host}}/api/patients
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "fullName": "Тестов Тест Тестович", "phone": "+79990000001", "isSubscribed": true, "notes": "Создан из .http-файла" }
+
+### Запись на визит (час назад, чтобы его можно было сразу отметить состоявшимся)
+# @name visit
+POST {{host}}/api/visits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "patientId": {{patient.response.body.$.id}},
+  "startAt": "{{$datetime iso8601 -1 h}}",
+  "doctorId": "test-doctor",
+  "serviceIds": [ "consultation" ],
+  "comment": "Тестовая запись"
+}
+
+###
+GET {{host}}/api/visits/{{visit.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+### «Визит состоялся»: фактически сделали консультацию и процедуру (заменяет список услуг)
+POST {{host}}/api/visits/{{visit.response.body.$.id}}/complete
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "serviceIds": [ "consultation", "test-botox" ], "comment": "Всё прошло хорошо" }
+
+### Повторно отметить нельзя (ожидается 409)
+POST {{host}}/api/visits/{{visit.response.body.$.id}}/complete
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ }
+
+### У пациента заполнился lastVisitAt
+GET {{host}}/api/patients/{{patient.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+### Ещё одна запись — на завтра
+# @name visit2
+POST {{host}}/api/visits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "patientId": {{patient.response.body.$.id}},
+  "startAt": "{{$datetime iso8601 1 d}}",
+  "doctorName": "Врач не из каталога",
+  "serviceIds": [ "facial-care" ]
+}
+
+### Будущий визит нельзя отметить состоявшимся (ожидается 400)
+POST {{host}}/api/visits/{{visit2.response.body.$.id}}/complete
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ }
+
+### Отмена записи
+POST {{host}}/api/visits/{{visit2.response.body.$.id}}/cancel
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "comment": "Пациент перенёс" }
+
+### Третья запись — неявка
+# @name visit3
+POST {{host}}/api/visits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "patientId": {{patient.response.body.$.id}}, "startAt": "{{$datetime iso8601 -2 h}}", "serviceIds": [] }
+
+###
+POST {{host}}/api/visits/{{visit3.response.body.$.id}}/no-show
+Authorization: Bearer {{token}}
+
+### Визиты пациента (свежие сверху)
+GET {{host}}/api/visits?patientId={{patient.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+### Визиты за сегодня по Москве — экран администратора
+GET {{host}}/api/visits?date={{$localDatetime 'yyyy-MM-dd'}}
+Authorization: Bearer {{token}}
+
+### Только запланированные за сегодня
+GET {{host}}/api/visits?date={{$localDatetime 'yyyy-MM-dd'}}&status=Planned
+Authorization: Bearer {{token}}
+
+### Ошибка: без пациента и даты (ожидается 400)
+GET {{host}}/api/visits
+Authorization: Bearer {{token}}
+
+### ── Сопоставление услуг внешних систем (роль Admin) ───────────────────────
+
+# @name map
+PUT {{host}}/api/visits/service-map
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "source": "Dikidi", "externalKey": "Ботокс (тест)", "serviceId": "test-botox" }
+
+###
+GET {{host}}/api/visits/service-map?source=Dikidi
+Authorization: Bearer {{token}}
+
+### Услугу из визитов и сопоставлений удалить нельзя (ожидается 409)
+DELETE {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+
+### ── Сценарии напоминаний (Issue #14) ─────────────────────────────────────
+### ВНИМАНИЕ: этот блок доводит напоминание до настоящей заявки на SMS. Используйте СВОЙ номер:
+### пациент «Я (тестовый получатель)» создаётся сервером из Seed:MyPhone. Его id — в {{myPatientId}}
+### (впишите в http-client.env.json.user: { "dev": { "adminPassword": "...", "myPatientId": 1 } }).
+
+### Сценарии (примеры из ADR-0008 созданы выключенными)
+GET {{host}}/api/scenarios
+Authorization: Bearer {{token}}
+
+### Сценарий «контроль через 14 дней» после консультации. Время — по Москве, 09:00–20:59.
+# @name scenario
+POST {{host}}/api/scenarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "test: контроль через 14 дней",
+  "purpose": "Service",
+  "trigger": "VisitCompleted",
+  "triggerServiceIds": [ "consultation" ],
+  "steps": [
+    { "order": 1, "offsetDays": 14, "sendTime": "11:00", "text": "{name}, пора на контрольный осмотр", "cancelIfFutureVisit": true }
+  ]
+}
+
+### Визит час назад со своим номером
+# @name myVisit
+POST {{host}}/api/visits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "patientId": {{myPatientId}}, "startAt": "{{$datetime iso8601 -1 h}}", "serviceIds": [ "consultation" ] }
+
+### Что запланируется, если подтвердить визит (ничего не сохраняет)
+POST {{host}}/api/scenarios/preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "visitId": {{myVisit.response.body.$.id}} }
+
+### Подтверждаем визит — планировщик создаёт напоминание
+POST {{host}}/api/visits/{{myVisit.response.body.$.id}}/complete
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ }
+
+### Напоминания пациента
+# @name myReminders
+GET {{host}}/api/reminders?patientId={{myPatientId}}
+Authorization: Bearer {{token}}
+
+### Сдвигаем срок в прошлое — в течение минуты воркер создаст заявку (только в окне отправки из настроек, по умолчанию 9:00–20:00 МСК)
+PUT {{host}}/api/reminders/{{myReminders.response.body.$[0].id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "dueAt": "{{$datetime iso8601 -1 m}}" }
+
+### Через минуту: статус Sent и requestId — номер заявки в «Заявках» Admin
+GET {{host}}/api/reminders?patientId={{myPatientId}}
+Authorization: Bearer {{token}}
+
+### Ручное напоминание: через 3 дня в 10:30 по Москве
+POST {{host}}/api/reminders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "patientId": {{myPatientId}}, "inDays": 3, "time": "10:30", "text": "{name}, ручное напоминание" }
+
+### Все запланированные
+GET {{host}}/api/reminders?status=Planned
+Authorization: Bearer {{token}}
+
+### Удалить тестовый сценарий (его запланированные напоминания отменятся)
+DELETE {{host}}/api/scenarios/{{scenario.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+### ── Dikidi, только чтение (#15) ───────────────────────────────────────────
+# Работает, только если в user-secrets заданы Dikidi:Phone, Dikidi:Password, Dikidi:CompanyId.
+
+### Состояние адаптера: последняя синхронизация, ошибка, счётчики
+GET {{host}}/api/integrations/dikidi/status
+Authorization: Bearer {{token}}
+
+### Услуги из Dikidi, которых нет в сопоставлении с каталогом
+GET {{host}}/api/integrations/dikidi/unmapped-services
+Authorization: Bearer {{token}}
+
+### Сопоставить услугу Dikidi с каталогом (название — как в списке выше)
+PUT {{host}}/api/visits/service-map
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "source": "Dikidi", "externalKey": "НАЗВАНИЕ_ИЗ_СПИСКА", "serviceId": "consultation" }
+
+### Синхронизировать сейчас
+POST {{host}}/api/integrations/dikidi/sync
+Authorization: Bearer {{token}}
+
+### ── Уборка тестовых данных ─────────────────────────────────────────────────
+
+DELETE {{host}}/api/visits/service-map/{{map.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+### Пациент удаляется вместе с визитами
+DELETE {{host}}/api/patients/{{patient.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+### Теперь услугу можно удалить
+DELETE {{host}}/api/catalog/admin/services/test-botox
+Authorization: Bearer {{token}}
+
+###
+DELETE {{host}}/api/catalog/admin/doctors/test-doctor
+Authorization: Bearer {{token}}
+
+###
+DELETE {{host}}/api/catalog/admin/categories/{{category.response.body.$.id}}
+Authorization: Bearer {{token}}

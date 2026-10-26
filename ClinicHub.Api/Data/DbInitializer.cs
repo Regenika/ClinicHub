@@ -13,6 +13,8 @@ public static class DbInitializer
         await db.Database.MigrateAsync();
 
         await SeedAsync(db, logger, config);
+        await Modules.Catalog.CatalogSeed.SeedAsync(db, logger);
+        await Modules.Messaging.Scenarios.ScenarioSeed.SeedAsync(db, logger);
     }
 
     /// <summary>12 символов без похожих друг на друга (0/O, 1/l/I), чтобы пароль было легко переписать с экрана.</summary>

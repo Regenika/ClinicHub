@@ -63,6 +63,7 @@ public static class PatientsEndpoints
                 DateOfBirth = p.DateOfBirth,
                 IsSubscribed = p.IsSubscribed,
                 Notes = p.Notes,
+                LastVisitAt = p.LastVisitAt,
             })
             .ToListAsync();
 
@@ -172,5 +173,6 @@ public static class PatientsEndpoints
         Age = p.DateOfBirth is DateTime dob ? CalculateAge(dob, DateTime.UtcNow.Date) : null,
         IsSubscribed = p.IsSubscribed,
         Notes = p.Notes,
+        LastVisitAt = p.LastVisitAt,
     };
 }
