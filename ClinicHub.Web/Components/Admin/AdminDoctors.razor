@@ -4,22 +4,22 @@
 @layout AdminLayout
 @inject CatalogAdmin Catalog
 
-<PageTitle>Врачи — админка</PageTitle>
+<PageTitle>Специалисты — админка</PageTitle>
 
 <section class="stack-lg">
     <div class="admin-head">
-        <h1 class="h2">Врачи</h1>
+        <h1 class="h2">Специалисты</h1>
         @if (form is null)
         {
-            <button class="btn btn--primary" @onclick="NewAsync">Добавить врача</button>
+            <button class="btn btn--primary" @onclick="NewAsync">Добавить специалиста</button>
         }
     </div>
-    <p class="muted">Порядок в списке — порядок на сайте. Услуги врача определяют, к кому можно записаться на услугу.</p>
+    <p class="muted">Порядок в списке — порядок на сайте. Услуги специалиста определяют, к кому можно записаться на услугу.</p>
 
     @if (form is not null)
     {
         <EditForm Model="form" OnValidSubmit="SaveAsync" class="stack setup__form admin-form">
-            <h2 class="h3">@(form.Id == 0 ? "Новый врач" : "Изменить врача")</h2>
+            <h2 class="h3">@(form.Id == 0 ? "Новый специалист" : "Изменить специалиста")</h2>
             <DataAnnotationsValidator />
             <ValidationSummary class="form-errors" />
             @if (error is not null)
@@ -40,7 +40,7 @@
             </div>
             <MediaPicker Id="d-photo" Label="Фото" Hint="Портрет 4:5, лицо по центру." @bind-Value="form.PhotoId" />
             <fieldset class="field">
-                <legend>Услуги, которые ведёт врач (ни одной — все)</legend>
+                <legend>Услуги, которые ведёт специалист (ни одной — все)</legend>
                 @foreach (var s in services)
                 {
                     <label class="check">
@@ -67,7 +67,7 @@
 
     <div class="admin-table-wrap">
         <table class="admin-table">
-            <thead><tr><th>Врач</th><th>Услуги</th><th>На сайте</th><th></th></tr></thead>
+            <thead><tr><th>Специалист</th><th>Услуги</th><th>На сайте</th><th></th></tr></thead>
             <tbody>
                 @foreach (var d in rows)
                 {
@@ -160,7 +160,7 @@
     {
         await Catalog.DeleteDoctorAsync(id);
         confirmDelete = null;
-        saved = "Врач удалён.";
+        saved = "Специалист удалён.";
         await LoadAsync();
     }
 }

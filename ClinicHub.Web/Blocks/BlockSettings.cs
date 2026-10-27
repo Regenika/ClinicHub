@@ -34,7 +34,7 @@ public sealed record HeroBlock
     public string PhotoNote { get; init; } = "[ФОТО: кабинет или врач на приёме]";
 }
 
-/// <summary>Быстрая запись: услуга и врач из каталога, переход сразу к выбору времени.</summary>
+/// <summary>Быстрая запись: услуга и специалист из каталога, переход сразу к выбору времени.</summary>
 public sealed record QuickBookingBlock
 {
     [Display(Name = "Текст кнопки")]
@@ -60,9 +60,9 @@ public sealed record DoctorsBlock
     [Display(Name = "Якорь для меню")]
     public string Anchor { get; init; } = "doctors";
     [Display(Name = "Заголовок")]
-    public string Title { get; init; } = "Врачи";
-    /// <summary>Каких врачей показать и в каком порядке. Пусто — всех из каталога.</summary>
-    [Display(Name = "Каких врачей показать", Description = "Ни одного — всех из каталога.")]
+    public string Title { get; init; } = "Специалисты";
+    /// <summary>Каких специалистов показать и в каком порядке. Пусто — всех из каталога.</summary>
+    [Display(Name = "Каких специалистов показать", Description = "Ни одного — всех из каталога.")]
     public List<string> DoctorIds { get; init; } = [];
 }
 

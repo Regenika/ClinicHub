@@ -6,7 +6,7 @@
 @inject TimeProvider Clock
 
 <Seo Title="@($"Онлайн-запись — {clinic.Name}")"
-     Description="Запись к врачу-косметологу онлайн: выберите услугу, врача и свободное время."
+     Description="Запись к врачу-косметологу онлайн: выберите услугу, специалиста и свободное время."
      Path="/zapis" />
 
 <div class="container booking">
@@ -51,7 +51,7 @@
         <section class="card booking__done" aria-labelledby="done-title">
             <h2 id="done-title" class="h3">Заявка принята</h2>
             <p>
-                @service!.Name, @ClinicTime.FormatSlot(slot!.StartUtc), врач: @DoctorName(slot.DoctorId).
+                @service!.Name, @ClinicTime.FormatSlot(slot!.StartUtc), специалист: @DoctorName(slot.DoctorId).
                 Код подтверждения придёт на @PhoneNumbers.FormatRu(phoneE164) (@ChannelName(Form!.Channel)).
             </p>
             @if (Source.IsDemo)
@@ -83,7 +83,7 @@
                         break;
 
                     case 2:
-                        <h2 id="step-title" class="h3">Выберите врача</h2>
+                        <h2 id="step-title" class="h3">Выберите специалиста</h2>
                         <ul class="choice-list">
                             <li>
                                 <a class="choice" href="@Url(service!.Id, BookingQuery.AnyDoctor)">
@@ -192,7 +192,7 @@
                 <dl class="summary">
                     <dt>Услуга</dt>
                     <dd>@(service?.Name ?? "—")</dd>
-                    <dt>Врач</dt>
+                    <dt>Специалист</dt>
                     <dd>@(slot is not null ? DoctorName(slot.DoctorId) : doctor?.Name ?? (Doctor == BookingQuery.AnyDoctor ? "Любой свободный" : "—"))</dd>
                     <dt>Когда</dt>
                     <dd class="tabular">@(slot is not null ? ClinicTime.FormatSlot(slot.StartUtc) : "—")</dd>
@@ -242,7 +242,7 @@
         // Врач, который не ведёт выбранную услугу, — сбрасываем выбор врача.
         if (service is not null && doctor is not null && !doctor.Treats(service.Id))
         {
-            hint = $"{doctor.Name} не ведёт услугу «{service.Name}». Выберите другого врача или «Любой свободный».";
+            hint = $"{doctor.Name} не ведёт услугу «{service.Name}». Выберите другого специалиста или «Любой свободный».";
             doctor = null;
             Doctor = null;
         }
@@ -338,7 +338,7 @@
     private IEnumerable<(int N, string Title, string? Href)> StepList()
     {
         yield return (1, "Услуга", Url(doctor: Doctor));
-        yield return (2, "Врач", Url(service?.Id));
+        yield return (2, "Специалист", Url(service?.Id));
         yield return (3, "Дата и время", Url(service?.Id, Doctor, date));
         yield return (4, "Подтверждение", null);
     }
