@@ -30,7 +30,7 @@ public static class BlockTypes
         new("hero", "Обложка", typeof(HeroBlock), typeof(HeroView)),
         new("quick-booking", "Быстрая запись", typeof(QuickBookingBlock), typeof(QuickBookingView)),
         new("services", "Услуги", typeof(ServicesBlock), typeof(ServicesView)),
-        new("doctors", "Врачи", typeof(DoctorsBlock), typeof(DoctorsView)),
+        new("doctors", "Специалисты", typeof(DoctorsBlock), typeof(DoctorsView)),
         new("results", "До и после", typeof(ResultsBlock), typeof(ResultsView)),
         new("reviews", "Отзывы", typeof(ReviewsBlock), typeof(ReviewsView)),
         new("channels", "Каналы", typeof(ChannelsBlock), typeof(ChannelsView)),

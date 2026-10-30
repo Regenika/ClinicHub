@@ -1,4 +1,4 @@
-@* Блок «Быстрая запись»: услуга и врач из каталога, дальше сразу шаг выбора времени. *@
+@* Блок «Быстрая запись»: услуга и специалист из каталога, дальше сразу шаг выбора времени. *@
 @inject ISiteCatalog Catalog
 
 <section class="container quick" aria-label="Быстрая запись">
@@ -13,7 +13,7 @@
             </select>
         </div>
         <div class="field">
-            <label for="q-doctor">Врач</label>
+            <label for="q-doctor">Специалист</label>
             <select id="q-doctor" name="doctor">
                 <option value="@BookingQuery.AnyDoctor">Любой свободный</option>
                 @foreach (var d in Catalog.Doctors)

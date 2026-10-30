@@ -6,7 +6,9 @@
 # Ключ -Portable собирает маленький архив, которому нужен установленный ASP.NET Core Runtime 10.
 
 param(
-    [switch]$Portable
+    [switch]$Portable,
+    # Только папка artifacts\web-package, без zip (так собирает автообновление: архив ему не нужен).
+    [switch]$NoZip
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,6 +36,10 @@ foreach ($f in "install.cmd", "install.ps1", "uninstall.cmd", "uninstall.ps1", "
     Copy-Item (Join-Path $PSScriptRoot $f) $staging
 }
 
+if ($NoZip) {
+    Write-Host "Готово: $staging" -ForegroundColor Green
+    return
+}
 Remove-Item $zip -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip
 Write-Host "Готово: $zip" -ForegroundColor Green

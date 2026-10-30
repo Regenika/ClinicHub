@@ -1,4 +1,4 @@
-@* Блок «Врачи»: врачи из каталога, блок хранит только выбор. *@
+@* Блок «Специалисты»: специалисты из каталога, блок хранит только выбор. *@
 @inject ISiteCatalog Catalog
 
 <section id="@Settings.Anchor" class="container section stack-lg" aria-labelledby="@TitleId">
@@ -13,11 +13,11 @@
                 }
                 else
                 {
-                    <div class="photo-slot photo-slot--doctor" role="img" aria-label="Место для фотографии врача">[ФОТО ВРАЧА]</div>
+                    <div class="photo-slot photo-slot--doctor" role="img" aria-label="Место для фотографии специалиста">[ФОТО СПЕЦИАЛИСТА]</div>
                 }
                 <h3 class="h3">@d.Name</h3>
                 <p class="muted">@d.Role</p>
-                <a href="/zapis?doctor=@d.Id">Записаться к врачу</a>
+                <a href="/zapis?doctor=@d.Id">Записаться к специалисту</a>
             </article>
         }
     </div>
@@ -30,7 +30,7 @@
     private string TitleId => Settings.Anchor + "-title";
 
     [Inject] private MediaLibrary Media { get; set; } = default!;
-    /// <summary>Врачи, у которых фото есть в медиатеке.</summary>
+    /// <summary>Специалисты, у которых фото есть в медиатеке.</summary>
     private HashSet<string> photos = [];
 
     protected override async Task OnParametersSetAsync()

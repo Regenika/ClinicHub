@@ -177,7 +177,7 @@ public sealed class CatalogAdmin(IDbContextFactory<SiteDbContext> dbFactory, Sit
         await using var db = await dbFactory.CreateDbContextAsync();
         var key = f.Key.Trim();
         if (await db.CatalogDoctors.AnyAsync(d => d.Key == key && d.Id != f.Id))
-            return "Врач с таким ключом уже есть.";
+            return "Специалист с таким ключом уже есть.";
 
         CatalogDoctor d;
         if (f.Id == 0)
@@ -190,7 +190,7 @@ public sealed class CatalogAdmin(IDbContextFactory<SiteDbContext> dbFactory, Sit
         {
             d = await db.CatalogDoctors.Include(x => x.Services).FirstAsync(x => x.Id == f.Id);
             if (d.Key != key)
-                return "Ключ существующего врача менять нельзя: на него ссылаются страницы и адреса записи.";
+                return "Ключ существующего специалиста менять нельзя: на него ссылаются страницы и адреса записи.";
         }
 
         d.Name = f.Name.Trim();
