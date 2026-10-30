@@ -240,9 +240,15 @@ try {
 # ── Брандмауэр ───────────────────────────────────────────────────────────────
 # Только частная и доменная сеть и только адреса из локальной подсети: в общественном Wi-Fi порт закрыт.
 Step "Открываю порт $Port в брандмауэре Windows (только локальная сеть)"
-Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+# Если адреса правила поменяли руками (на демо-компьютере порт открыт наружу), переустановка их сохраняет.
+$firewallRemote = "LocalSubnet"
+$oldRule = Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
+if ($oldRule) {
+    $firewallRemote = @($oldRule | Get-NetFirewallAddressFilter | ForEach-Object RemoteAddress) | Select-Object -Unique
+    $oldRule | Remove-NetFirewallRule
+}
 New-NetFirewallRule -DisplayName $FirewallRule -Direction Inbound -Protocol TCP -LocalPort $Port `
-    -Action Allow -Profile Private, Domain -RemoteAddress LocalSubnet | Out-Null
+    -Action Allow -Profile Private, Domain -RemoteAddress $firewallRemote | Out-Null
 
 $publicNets = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object NetworkCategory -eq "Public")
 

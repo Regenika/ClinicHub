@@ -102,10 +102,13 @@ builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var app = builder.Build();
 
 // Админка и канал интерактивных компонентов (/_blazor) — только из сети клиники. Остальным — как будто их нет.
+// Admin:AllowExternal = true открывает их извне (демо-компьютер, решение Свята 2026-10-30). По умолчанию выключено.
+var allowExternalAdmin = app.Configuration.GetValue<bool>("Admin:AllowExternal");
 app.Use(async (context, next) =>
 {
     var path = context.Request.Path;
     if ((path.StartsWithSegments("/admin") || path.StartsWithSegments("/_blazor"))
+        && !allowExternalAdmin
         && !AdminAuth.IsLocalNetwork(context.Connection.RemoteIpAddress))
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
