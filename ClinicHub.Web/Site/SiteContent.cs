@@ -1,9 +1,11 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ClinicHub.Web.Site;
 
 /// <summary>
-/// Контент публичного сайта: сведения о клинике, услуги, врачи, статьи.
-/// Пока читается из site-content.json. Когда появится модуль Content и веб-админка,
-/// источник поменяется, а страницы останутся теми же.
+/// Содержимое site-content.json — только начальное наполнение пустой БД (<see cref="Data.SiteSeeder"/>):
+/// сведения о клинике, страницы, каталог услуг и врачей. После первого подключения всё живёт в схеме site,
+/// и правки в файле на сайт уже не влияют.
 /// Значения в квадратных скобках — заглушки до сбора реального контента (PLAN, задача 4.1).
 /// </summary>
 public sealed class SiteContent
@@ -36,6 +38,11 @@ public sealed class ClinicInfo
     public string VkUrl { get; set; } = "";
     public RatingLink? ProDoktorov { get; set; }
     public RatingLink? YandexMaps { get; set; }
+
+    /// <summary>Палитра сайта: «#RRGGBB» или пусто — цвет из дизайна (Site/Theme.cs).</summary>
+    public string AccentColor { get; set; } = "";
+    public string BackgroundColor { get; set; } = "";
+    public string TextColor { get; set; } = "";
 }
 
 public sealed class RatingLink
@@ -60,25 +67,36 @@ public sealed class DoctorItem
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Role { get; set; } = "";
+    /// <summary>Фото из медиатеки (MediaFile.Id) или null.</summary>
+    public int? PhotoId { get; set; }
     /// <summary>Услуги, которые ведёт врач. Пусто — все.</summary>
     public List<string> ServiceIds { get; set; } = [];
 }
 
 public sealed class PostItem
 {
+    [Display(Name = "Рубрика")]
     public string Tag { get; set; } = "";
+    [Display(Name = "Заголовок")]
     public string Title { get; set; } = "";
+    [Display(Name = "Ссылка", Description = "Пусто — заголовок без ссылки.")]
     public string Url { get; set; } = "";
 }
 
 public sealed class ResultItem
 {
+    [Display(Name = "Подпись", Description = "Процедура · число сеансов · интервал.")]
     public string Caption { get; set; } = "";
+    [Display(Name = "Фото «до и после»", Description = "Одна картинка с парой снимков. Только с письменного согласия пациента."), ClinicHub.Web.Blocks.MediaImage]
+    public int? ImageId { get; set; }
+    [Display(Name = "Текст на месте фото")]
     public string ConsentNote { get; set; } = "";
 }
 
 public sealed class ReviewQuote
 {
+    [Display(Name = "Текст отзыва"), DataType(DataType.MultilineText)]
     public string Text { get; set; } = "";
+    [Display(Name = "Подпись", Description = "Имя, дата, площадка.")]
     public string Signature { get; set; } = "";
 }

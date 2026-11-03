@@ -1,0 +1,23 @@
+@* Блок страницы на сайте и в предпросмотре: компонент типа блока, при выбранном фоне — в обёртке с цветом из палитры. *@
+
+@if (string.IsNullOrEmpty(Block.Style))
+{
+    <DynamicComponent Type="@Block.Type.ComponentType" Parameters="@Parameters" />
+}
+else
+{
+    <div class="block-bg block-bg--@Block.Style">
+        <DynamicComponent Type="@Block.Type.ComponentType" Parameters="@Parameters" />
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public RenderedBlock Block { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private Dictionary<string, object> Parameters => new()
+    {
+        ["Settings"] = Block.Settings,
+        ["Clinic"] = Clinic,
+    };
+}

@@ -364,3 +364,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Сайт: зашифрованное подключение к базе и ключи шифрования (пишет страница /nastroika-bd). Никогда в git.
+ClinicHub.Web/config/

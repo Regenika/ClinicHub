@@ -7,14 +7,20 @@
 #   3. Регистрирует службу Windows «ClinicHub Web» от имени LOCAL SERVICE (без лишних прав): сайт стартует
 #      вместе с Windows, без входа пользователя, и перезапускается через минуту, если упал.
 #      Журнал — в C:\ClinicHub\Web\logs и в журнале событий Windows «Приложение» (источник ClinicHub.Web).
+#      Подключение к SQL Server задаётся в браузере на странице http://localhost:<порт>/nastroika-bd и хранится
+#      зашифрованным в C:\ClinicHub\Web\config (при переустановке сохраняется).
 #   4. Открывает порт в брандмауэре только для частной и доменной сети и только для адресов из локальной подсети.
 #   5. Проверяет, что сайт отвечает, и кладёт ярлык на рабочий стол.
 #
 # Версии до 2026-10 ставили сайт задачей планировщика под SYSTEM — такая задача удаляется автоматически.
+#
+# -Unattended — без вопросов и «Нажмите Enter», без открытия браузера; итог — код выхода (0 — успех).
+# Так установщик запускает автообновление (auto-update.ps1).
 
 param(
     [int]$Port = 8080,
-    [string]$InstallDir = "C:\ClinicHub\Web"
+    [string]$InstallDir = "C:\ClinicHub\Web",
+    [switch]$Unattended
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,7 +37,7 @@ function Step($text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cy
 function Fail($text) {
     Write-Host ""
     Write-Host "ОШИБКА: $text" -ForegroundColor Red
-    Read-Host "Нажмите Enter, чтобы закрыть окно"
+    if (-not $Unattended) { Read-Host "Нажмите Enter, чтобы закрыть окно" }
     exit 1
 }
 
@@ -39,9 +45,14 @@ function Fail($text) {
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    Start-Process powershell.exe -Verb RunAs -ArgumentList @(
-        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"",
+    $elevatedArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"",
         "-Port", $Port, "-InstallDir", "`"$InstallDir`"")
+    if ($Unattended) {
+        # Без окна: ждём окончания и возвращаем код выхода установки.
+        $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList ($elevatedArgs + "-Unattended")
+        exit $p.ExitCode
+    }
+    Start-Process powershell.exe -Verb RunAs -ArgumentList $elevatedArgs
     exit
 }
 
@@ -114,8 +125,8 @@ $keepContent = Test-Path $contentFile
 if ($keepContent) {
     Copy-Item $contentFile "$contentFile.bak" -Force
 }
-# Старые файлы версии убираем, чтобы не оставались лишние (контент сохранён выше, журналы не трогаем).
-Get-ChildItem $InstallDir -Force | Where-Object { $_.Name -notlike "site-content.json*" -and $_.Name -ne "logs" } |
+# Старые файлы версии убираем, чтобы не оставались лишние (контент сохранён выше; журналы и подключение к базе не трогаем).
+Get-ChildItem $InstallDir -Force | Where-Object { $_.Name -notlike "site-content.json*" -and $_.Name -notin "logs", "config" } |
     Remove-Item -Recurse -Force
 Copy-Item (Join-Path $Source "*") $InstallDir -Recurse -Force -Exclude "site-content.json"
 if ($keepContent) {
@@ -125,17 +136,68 @@ if ($keepContent) {
 }
 
 # ── Права на папку ───────────────────────────────────────────────────────────
-# Служба работает от LOCAL SERVICE: сайт может только читать свои файлы, писать — только в logs.
+# Служба работает от LOCAL SERVICE: сайт может только читать свои файлы, писать — только в logs и config.
+# В config — подключение к базе и ключи шифрования: читать их могут только служба и администраторы.
 $logsDir = Join-Path $InstallDir "logs"
-New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+$configDir = Join-Path $InstallDir "config"
+New-Item -ItemType Directory -Force -Path $logsDir, $configDir | Out-Null
 & icacls.exe $InstallDir /grant "${LocalServiceSid}:(OI)(CI)RX" /T /C /Q | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "Не удалось выдать службе права на папку $InstallDir." }
 & icacls.exe $logsDir /grant "${LocalServiceSid}:(OI)(CI)M" /T /C /Q | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "Не удалось выдать службе права на папку $logsDir." }
+# Наследование прав отключаем: обычные пользователи компьютера не должны видеть файл подключения.
+# Права ставим только на папку (без /T: флаги (OI)(CI) к файлам не применяются, и файлы остались бы совсем без прав),
+# а файлам внутри возвращаем наследование от неё — при переустановке поверх служба по-прежнему их читает.
+& icacls.exe $configDir /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "${LocalServiceSid}:(OI)(CI)M" /C /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { Fail "Не удалось выдать службе права на папку $configDir." }
+if (Get-ChildItem $configDir -Force | Select-Object -First 1) {
+    # Файлы создаёт служба, она и владелец. Если права на них испорчены (так делала версия установщика до 2026-10-17),
+    # администратор не может их поменять, пока не станет владельцем: сначала владелец — группа «Администраторы».
+    # takeown, а не icacls /setowner: только он пускает к файлу без единого разрешения (привилегия «смена владельца»).
+    Get-ChildItem $configDir -Recurse -File -Force | ForEach-Object { & takeown.exe /F $_.FullName /A | Out-Null }
+    & icacls.exe (Join-Path $configDir "*") /reset /T /C /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "Не удалось восстановить права на файлы в $configDir." }
+}
 
 # Источник для журнала событий Windows: создать его может только администратор, поэтому делает установщик.
 if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
     New-EventLog -LogName Application -Source $EventSource
+}
+
+# ── Порт ─────────────────────────────────────────────────────────────────────
+# Hyper-V, WSL и Docker (служба WinNAT) после перезагрузки резервируют за собой случайные диапазоны портов. Если порт сайта
+# попал в такой диапазон, служба не стартует («порт занят», так было на Valsot-PC 2026-10-20). Поэтому закрепляем порт
+# за сайтом своей резервацией: её Windows не раздаёт другим, а слушать порт сайту она не мешает.
+function Get-PortExclusion([string]$family) {
+    # "administered" — наша резервация (в выводе netsh со звёздочкой), "system" — диапазон, который взяла Windows, $null — свободен.
+    foreach ($line in (& netsh.exe int $family show excludedportrange protocol=tcp)) {
+        if ($line -match '^\s*(\d+)\s+(\d+)(\s+\*)?\s*$' -and $Port -ge [int]$Matches[1] -and $Port -le [int]$Matches[2]) {
+            if ($Matches[3]) { return "administered" } else { return "system" }
+        }
+    }
+    return $null
+}
+Step "Закрепляю порт $Port за сайтом"
+$families = @("ipv4", "ipv6")
+$missing = @($families | Where-Object { (Get-PortExclusion $_) -ne "administered" })
+if ($missing.Count -gt 0) {
+    # Диапазон, который уже взяла Windows, освобождается только остановкой WinNAT; после запуска она возьмёт другие порты.
+    $winnat = Get-Service winnat -ErrorAction SilentlyContinue
+    $restartWinnat = $winnat -and $winnat.Status -eq "Running" -and @($missing | Where-Object { (Get-PortExclusion $_) -eq "system" }).Count -gt 0
+    if ($restartWinnat) {
+        Write-Host "Порт попал в резерв Windows (WinNAT) — перезапускаю WinNAT, чтобы его освободить."
+        Stop-Service winnat -Force
+    }
+    try {
+        foreach ($f in $missing) {
+            # Обычно список у ipv4 и ipv6 общий: после ipv4 порт уже закреплён и для ipv6, повторное добавление — ошибка.
+            if ((Get-PortExclusion $f) -eq "administered") { continue }
+            $out = & netsh.exe int $f add excludedportrange protocol=tcp startport=$Port numberofports=1 store=persistent 2>&1
+            if ($LASTEXITCODE -ne 0) { Fail "Не удалось закрепить порт $Port ($f): $out" }
+        }
+    } finally {
+        if ($restartWinnat) { Start-Service winnat }
+    }
 }
 
 # ── Служба ───────────────────────────────────────────────────────────────────
@@ -178,9 +240,15 @@ try {
 # ── Брандмауэр ───────────────────────────────────────────────────────────────
 # Только частная и доменная сеть и только адреса из локальной подсети: в общественном Wi-Fi порт закрыт.
 Step "Открываю порт $Port в брандмауэре Windows (только локальная сеть)"
-Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+# Если адреса правила поменяли руками (на демо-компьютере порт открыт наружу), переустановка их сохраняет.
+$firewallRemote = "LocalSubnet"
+$oldRule = Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
+if ($oldRule) {
+    $firewallRemote = @($oldRule | Get-NetFirewallAddressFilter | ForEach-Object RemoteAddress) | Select-Object -Unique
+    $oldRule | Remove-NetFirewallRule
+}
 New-NetFirewallRule -DisplayName $FirewallRule -Direction Inbound -Protocol TCP -LocalPort $Port `
-    -Action Allow -Profile Private, Domain -RemoteAddress LocalSubnet | Out-Null
+    -Action Allow -Profile Private, Domain -RemoteAddress $firewallRemote | Out-Null
 
 $publicNets = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object NetworkCategory -eq "Public")
 
@@ -189,9 +257,12 @@ Step "Жду, пока сайт запустится"
 $local = "http://localhost:$Port/"
 $ok = $false
 for ($i = 0; $i -lt 30; $i++) {
+    # Любой HTTP-ответ значит, что служба работает. 503 — сайт ещё подключается к базе данных (в фоне, это нормально).
     try {
         $r = Invoke-WebRequest -Uri $local -UseBasicParsing -TimeoutSec 3
         if ($r.StatusCode -eq 200) { $ok = $true; break }
+    } catch [System.Net.WebException] {
+        if ($_.Exception.Response) { $ok = $true; break }
     } catch { }
     Start-Sleep -Seconds 1
 }
@@ -222,6 +293,9 @@ if ($publicNets.Count -gt 0) {
 }
 Write-Host ""
 Write-Host "Журнал работы сайта: $logsDir"
-Write-Host "Контент (телефон, адрес, услуги, врачи): $contentFile — правится в Блокноте, перезапуск не нужен."
+if ($Unattended) { exit 0 }
+Write-Host ""
+Write-Host "Если сайт ещё не подключён к базе данных, в браузере откроется страница подключения:" -ForegroundColor Cyan
+Write-Host "  ${local}nastroika-bd — укажите сервер SQL Server, логин и пароль." -ForegroundColor Cyan
 Start-Process $local
 Read-Host "Нажмите Enter, чтобы закрыть окно"

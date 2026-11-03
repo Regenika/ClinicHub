@@ -1,0 +1,17 @@
+@* Текстовое поле формы админки с подписью. Обрезает пробелы по краям и не даёт записать null. *@
+
+<div class="field">
+    <label for="@id">@Label</label>
+    <input id="@id" type="text" value="@Value" placeholder="@Placeholder" @onchange="OnChange" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+
+    private readonly string id = "f-" + Guid.NewGuid().ToString("N")[..8];
+
+    private Task OnChange(ChangeEventArgs e) => ValueChanged.InvokeAsync((e.Value as string)?.Trim() ?? "");
+}

@@ -1,0 +1,96 @@
+@page "/admin/vhod"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authentication
+@inject EditorAccounts Accounts
+@inject LoginThrottle Throttle
+@inject NavigationManager Nav
+
+@* Вход редактора. Статическая форма (не интерактивная): куку входа можно поставить только в обычном HTTP-ответе. *@
+
+<PageTitle>Вход — админка ClinicHub</PageTitle>
+<HeadContent><meta name="robots" content="noindex" /></HeadContent>
+
+<section class="admin-narrow stack">
+    <h1 class="h2">Вход в админку</h1>
+
+    @if (noEditors)
+    {
+        <p class="notice" role="note">
+            Редакторов ещё нет. Первого редактора создают на компьютере, где установлен сайт:
+            откройте на нём <b>http://localhost:@(HttpContext?.Request.Host.Port)@AdminAuth.FirstEditorPath</b>.
+        </p>
+    }
+    else
+    {
+        <EditForm Model="Form" FormName="admin-login" OnSubmit="LoginAsync" class="stack setup__form" novalidate>
+            @if (error is not null)
+            {
+                <div class="form-errors" role="alert">@error</div>
+            }
+            <div class="field">
+                <label for="a-login">Логин</label>
+                <InputText id="a-login" autocomplete="username" spellcheck="false" @bind-Value="Form!.Login" />
+            </div>
+            <div class="field">
+                <label for="a-password">Пароль</label>
+                <InputText id="a-password" type="password" autocomplete="current-password" @bind-Value="Form.Password" />
+            </div>
+            <button class="btn btn--primary btn--lg" type="submit">Войти</button>
+        </EditForm>
+    }
+</section>
+
+@code {
+    public sealed class LoginForm
+    {
+        public string? Login { get; set; }
+        public string? Password { get; set; }
+    }
+
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+    [SupplyParameterFromForm(FormName = "admin-login")] private LoginForm? Form { get; set; }
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private bool noEditors;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Form ??= new LoginForm();
+        if (await Accounts.AnyAsync())
+            return;
+        // Редакторов нет: на этом компьютере сразу ведём к созданию первого, с других — подсказка.
+        if (HttpContext?.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip))
+            Nav.NavigateTo(AdminAuth.FirstEditorPath);
+        noEditors = true;
+    }
+
+    private async Task LoginAsync()
+    {
+        var key = EditorAccounts.NormalizeLogin(Form!.Login) + "|" + HttpContext?.Connection.RemoteIpAddress;
+        if (Throttle.LockedFor(key) is { } wait)
+        {
+            error = $"Слишком много неудачных попыток. Попробуйте снова через {Math.Ceiling(wait.TotalMinutes)} мин.";
+            return;
+        }
+
+        var editor = await Accounts.VerifyAsync(Form.Login, Form.Password);
+        Form.Password = null;
+        if (editor is null)
+        {
+            Throttle.Failed(key);
+            error = "Неверный логин или пароль.";
+            return;
+        }
+
+        Throttle.Succeeded(key);
+        await HttpContext!.SignInAsync(AdminAuth.Scheme, AdminAuth.Principal(editor));
+        Nav.NavigateTo(SafeReturnUrl());
+    }
+
+    /// <summary>Возврат только внутрь админки: иначе ссылкой «вход → чужой сайт» можно увести редактора на подделку.</summary>
+    private string SafeReturnUrl() =>
+        ReturnUrl is { } url && url.StartsWith("/admin", StringComparison.Ordinal) && !url.StartsWith("//") && !url.Contains('\\')
+            ? url
+            : "/admin";
+}

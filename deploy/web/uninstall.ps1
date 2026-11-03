@@ -21,6 +21,14 @@ if (-not $isAdmin) {
 
 Write-Host "Удаление сайта клиники (ClinicHub.Web)" -ForegroundColor Yellow
 
+# Автообновление (auto-update.ps1) иначе поставило бы сайт обратно.
+if (Get-ScheduledTask -TaskName "ClinicHub Web Auto-Update" -ErrorAction SilentlyContinue) {
+    # Остановить идущий запуск: иначе начатая сборка доделается и поставит сайт заново уже после удаления.
+    Stop-ScheduledTask -TaskName "ClinicHub Web Auto-Update" -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName "ClinicHub Web Auto-Update" -Confirm:$false
+    Write-Host "Автообновление выключено (папку C:\ClinicHub\Updater можно удалить)."
+}
+
 if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
     Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
     & sc.exe delete $ServiceName | Out-Null

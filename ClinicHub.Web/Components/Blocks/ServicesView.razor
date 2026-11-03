@@ -1,0 +1,34 @@
+@* Блок «Услуги»: названия, описания и цены из каталога, блок хранит только выбор услуг. *@
+@inject ISiteCatalog Catalog
+
+<section id="@Settings.Anchor" class="band" aria-labelledby="@TitleId">
+    <div class="container stack-lg">
+        <div class="section-head">
+            <h2 id="@TitleId" class="h2">@Settings.Title</h2>
+        </div>
+        <div class="cards">
+            @foreach (var s in Catalog.Services.Pick(Settings.ServiceIds, x => x.Id))
+            {
+                <article class="card card--soft service">
+                    <h3 class="h3">@s.Name</h3>
+                    <p class="muted">@s.Text</p>
+                    <div class="service__foot">
+                        <span class="price">@s.Price</span>
+                        <a href="/zapis?service=@s.Id">Записаться</a>
+                    </div>
+                </article>
+            }
+        </div>
+        @if (!string.IsNullOrEmpty(Settings.Note))
+        {
+            <p class="note">@Settings.Note</p>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ServicesBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private string TitleId => Settings.Anchor + "-title";
+}

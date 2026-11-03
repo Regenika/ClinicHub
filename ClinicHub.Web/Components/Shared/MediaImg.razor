@@ -1,0 +1,22 @@
+@* Картинка из медиатеки. Описание (alt) и кадр (точка интереса, приближение) — из медиатеки;
+   картинку удалили — ничего не выводит, и блок показывает место для фото. *@
+@inject MediaLibrary Media
+
+@if (info is not null)
+{
+    <img src="@info.Url" alt="@info.Alt" class="@CssClass" style="@info.FrameStyle()" loading="@(Eager ? "eager" : "lazy")" decoding="async" />
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+    /// <summary>Для первой картинки на экране (обложка): грузить сразу, а не при прокрутке.</summary>
+    [Parameter] public bool Eager { get; set; }
+
+    private MediaInfo? info;
+
+    protected override async Task OnParametersSetAsync() => info = await Media.InfoAsync(Id);
+
+    /// <summary>Есть ли такая картинка в медиатеке — чтобы блок решил, показывать её или место для фото.</summary>
+    public static async Task<bool> ExistsAsync(MediaLibrary media, int? id) => await media.InfoAsync(id) is not null;
+}
