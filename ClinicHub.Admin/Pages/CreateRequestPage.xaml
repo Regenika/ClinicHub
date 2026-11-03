@@ -78,6 +78,22 @@
                                 <VerticalStackLayout Spacing="12">
                                     <Label Text="1. Сообщение" Style="{StaticResource CardTitleStyle}" />
 
+                                    <!-- Цель обязательна (Issue #34): от неё зависит проверка согласия на рекламу. -->
+                                    <VerticalStackLayout Spacing="6">
+                                        <Label Text="Цель рассылки" Style="{StaticResource FieldLabelStyle}" />
+                                        <Picker x:Name="PurposePicker" Title="Выберите цель"
+                                                SelectedIndexChanged="OnPurposeChanged">
+                                            <Picker.ItemsSource>
+                                                <x:Array Type="{x:Type x:String}">
+                                                    <x:String>Сервисное — напоминание о записи, перенос, контроль после визита</x:String>
+                                                    <x:String>Рекламное — акции, поздравление со скидкой, «давно не были»</x:String>
+                                                </x:Array>
+                                            </Picker.ItemsSource>
+                                        </Picker>
+                                        <Label Text="Рекламное получат только пациенты с согласием на рекламу по SMS (закон «О рекламе», ст. 18). Остальные будут пропущены, причина видна в заявке."
+                                               FontSize="12" TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
+                                    </VerticalStackLayout>
+
                                     <VerticalStackLayout Spacing="6">
                                         <Label Text="Шаблон" Style="{StaticResource FieldLabelStyle}" />
                                         <Entry x:Name="TemplateSearchEntry"

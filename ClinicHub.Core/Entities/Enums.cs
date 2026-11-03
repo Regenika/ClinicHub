@@ -24,6 +24,17 @@ public enum RequestStatus
     Rejected,
 }
 
+/// <summary>
+/// Цель сообщения (ARCHITECTURE §3.2, ADR-0008 §5). Service — продолжение лечения по визиту, идёт без рекламного
+/// согласия. Marketing — реклама (акции, поздравления со скидкой, «давно не были»): только при согласии на канал
+/// (закон «О рекламе», ст. 18).
+/// </summary>
+public enum MessagePurpose
+{
+    Service,
+    Marketing,
+}
+
 public enum SendMode
 {
     Now,
@@ -40,6 +51,8 @@ public enum RecipientStatus
     Sending,
     Sent,
     Failed,
+    /// <summary>Не отправлено по правилам: нет согласия на рекламу, пациент отписан и т. п. Причина — в SkipReason.</summary>
+    Skipped,
 }
 
 public enum QueueItemStatus

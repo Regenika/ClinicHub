@@ -1,4 +1,5 @@
 using ClinicHub.Api.Data;
+using ClinicHub.Api.Modules.Consents;
 using ClinicHub.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -33,11 +34,15 @@ public class SchedulerService
         };
     }
 
-    /// <summary>Превращает одобренные заявки в получателей и ставит их в очередь, когда разрешено.</summary>
+    /// <summary>
+    /// Превращает одобренные заявки в получателей и ставит их в очередь, когда разрешено.
+    /// Перед постановкой — проверка согласий (Issue #34): кому нельзя, тот получает Skipped с причиной и в очередь не идёт.
+    /// </summary>
     public async Task PlanAsync(CancellationToken ct)
     {
-        await using var db = _scopeFactory.CreateScope().ServiceProvider
-            .GetRequiredService<ClinicHubDbContext>();
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ClinicHubDbContext>();
+        var consents = scope.ServiceProvider.GetRequiredService<IConsentChecker>();
 
         var now = DateTime.UtcNow;
 
@@ -59,21 +64,8 @@ public class SchedulerService
             }
 
             request.Status = RequestStatus.Scheduled;
-
-            // Переносим получателей, которым уже можно, в очередь.
-            foreach (var rec in request.Recipients)
-            {
-                if (rec.Status == RecipientStatus.Pending &&
-                    rec.SendAfter != null && rec.SendAfter.Value <= now)
-                {
-                    Enqueue(db, rec.Id);
-                    rec.Status = RecipientStatus.Scheduled;
-                    _logger.LogInformation("Заявка #{Req}: получатель #{Rec} ({To}) поставлен в очередь", request.Id, rec.Id, rec.Phone);
-                }
-            }
-
-            if (request.Status == RequestStatus.Scheduled)
-                _logger.LogInformation("Заявка #{Id} запланирована ({Title})", request.Id, request.Title);
+            await EnqueueDueAsync(db, consents, request, now, ct);
+            _logger.LogInformation("Заявка #{Id} запланирована ({Title})", request.Id, request.Title);
         }
 
         // 2) Заявки в статусе Scheduled: новые разрешённые получатели -> в очередь.
@@ -82,27 +74,56 @@ public class SchedulerService
             .Include(r => r.Recipients)
             .ToListAsync(ct);
 
-        foreach (var request in scheduled)
+        foreach (var request in scheduled.Concat(approved).Distinct())
         {
-            foreach (var rec in request.Recipients)
-            {
-                if (rec.Status == RecipientStatus.Pending &&
-                    rec.SendAfter != null && rec.SendAfter.Value <= now)
-                {
-                    Enqueue(db, rec.Id);
-                    rec.Status = RecipientStatus.Scheduled;
-                    _logger.LogInformation("Заявка #{Req}: получатель #{Rec} ({To}) поставлен в очередь", request.Id, rec.Id, rec.Phone);
-                }
-            }
+            if (request.Status != RequestStatus.Scheduled)
+                continue;
+            if (!approved.Contains(request))
+                await EnqueueDueAsync(db, consents, request, now, ct);
 
-            if (request.Recipients.Any(r => r.Status == RecipientStatus.Failed) &&
-                request.Recipients.All(r => r.Status is RecipientStatus.Sent or RecipientStatus.Failed))
-            {
-                request.Status = RequestStatus.Partial;
-            }
+            // Все получатели уже в конечном статусе (например, всех пропустили без согласия) — заявка завершена:
+            // отчёт телефона, который обычно пересчитывает статус, в этом случае не придёт.
+            if (RequestOutcome.Final(request.Recipients) is { } final)
+                request.Status = final;
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Наступившие получатели заявки: проверка согласий и постановка в очередь.</summary>
+    private async Task EnqueueDueAsync(
+        ClinicHubDbContext db, IConsentChecker consents, SmsRequest request, DateTime now, CancellationToken ct)
+    {
+        var due = request.Recipients
+            .Where(rec => rec.Status == RecipientStatus.Pending && rec.SendAfter != null && rec.SendAfter.Value <= now)
+            .ToList();
+        if (due.Count == 0)
+            return;
+
+        var decisions = await consents.CheckManyAsync(
+            due.Where(r => r.PatientId != null).Select(r => r.PatientId!.Value).Distinct().ToList(),
+            request.Purpose, ConsentChannel.Sms, now, ct);
+
+        foreach (var rec in due)
+        {
+            var decision = rec.PatientId is int pid ? decisions[pid] : ConsentRules.ForUnknownRecipient(request.Purpose);
+            if (!decision.Allowed)
+            {
+                Skip(rec, decision.Reason);
+                _logger.LogInformation("Заявка #{Req}: получатель #{Rec} пропущен — {Reason}", request.Id, rec.Id, decision.Reason);
+                continue;
+            }
+
+            Enqueue(db, rec.Id);
+            rec.Status = RecipientStatus.Scheduled;
+            _logger.LogInformation("Заявка #{Req}: получатель #{Rec} ({To}) поставлен в очередь", request.Id, rec.Id, rec.Phone);
+        }
+    }
+
+    private static void Skip(RequestRecipient rec, string reason)
+    {
+        rec.Status = RecipientStatus.Skipped;
+        rec.SkipReason = reason.Length <= 300 ? reason : reason[..300];
     }
 
     /// <summary>Сколько ждать отчёта от устройства, прежде чем считать задачу зависшей.</summary>
@@ -195,8 +216,8 @@ public class SchedulerService
     /// <summary>Распределяет Pending-элементы очереди по онлайн-телефонам/SIM с учётом лимитов.</summary>
     public async Task<int> DistributeAsync(CancellationToken ct)
     {
-        await using var db = _scopeFactory.CreateScope().ServiceProvider
-            .GetRequiredService<ClinicHubDbContext>();
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ClinicHubDbContext>();
 
         var now = DateTime.UtcNow;
 
@@ -281,10 +302,16 @@ public class SchedulerService
         var pending = await db.SmsQueue
             .Where(q => q.Status == QueueItemStatus.Pending)
             .Include(q => q.Recipient)
+            .ThenInclude(r => r!.Request)
             .OrderByDescending(q => q.Priority)
             .ThenBy(q => q.CreatedAt)
             .Take(500)
             .ToListAsync(ct);
+
+        // Повторная проверка согласий прямо перед выдачей телефону: пока SMS ждала окна или свободной SIM,
+        // пациент мог отозвать согласие или отписаться (Issue #34).
+        var skipped = await RecheckConsentsAsync(db, scope.ServiceProvider.GetRequiredService<IConsentChecker>(), pending, now, ct);
+        pending.RemoveAll(q => q.Status != QueueItemStatus.Pending);
 
         var assigned = 0;
 
@@ -381,10 +408,54 @@ public class SchedulerService
             assigned++;
         }
 
-        if (assigned > 0)
+        if (assigned > 0 || skipped > 0)
             await db.SaveChangesAsync(ct);
 
         return assigned;
+    }
+
+    /// <summary>Снимает с очереди задачи, которым больше нельзя уходить. Возвращает их число.</summary>
+    private async Task<int> RecheckConsentsAsync(
+        ClinicHubDbContext db, IConsentChecker consents, List<SmsQueueItem> pending, DateTime now, CancellationToken ct)
+    {
+        var withRecipient = pending.Where(q => q.Recipient?.Request != null).ToList();
+        var skipped = 0;
+        var touchedRequests = new HashSet<int>();
+
+        foreach (var group in withRecipient.GroupBy(q => q.Recipient!.Request!.Purpose))
+        {
+            var decisions = await consents.CheckManyAsync(
+                group.Where(q => q.Recipient!.PatientId != null).Select(q => q.Recipient!.PatientId!.Value).Distinct().ToList(),
+                group.Key, ConsentChannel.Sms, now, ct);
+
+            foreach (var item in group)
+            {
+                var rec = item.Recipient!;
+                var decision = rec.PatientId is int pid ? decisions[pid] : ConsentRules.ForUnknownRecipient(group.Key);
+                if (decision.Allowed)
+                    continue;
+
+                item.Status = QueueItemStatus.Failed;
+                item.LastError = "Не отправлено: " + decision.Reason;
+                Skip(rec, decision.Reason);
+                touchedRequests.Add(rec.RequestId);
+                skipped++;
+                _logger.LogInformation("Задача #{Id} снята перед отправкой — {Reason}", item.Id, decision.Reason);
+            }
+        }
+
+        if (touchedRequests.Count > 0)
+        {
+            var ids = touchedRequests.ToList();
+            var requests = await db.SmsRequests.Include(r => r.Recipients)
+                .Where(r => ids.Contains(r.Id)).ToListAsync(ct);
+            foreach (var request in requests)
+            {
+                if (RequestOutcome.Final(request.Recipients) is { } final)
+                    request.Status = final;
+            }
+        }
+        return skipped;
     }
 
     /// <summary>Обработка результата из SmsAgent (идемпотентно по taskId=QueueItem.Id).</summary>

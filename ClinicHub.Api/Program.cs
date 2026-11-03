@@ -4,6 +4,7 @@ using ClinicHub.Api.Background;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Endpoints;
 using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Consents;
 using ClinicHub.Api.Modules.Integrations.Dikidi;
 using ClinicHub.Api.Modules.Messaging.Scenarios;
 using ClinicHub.Api.Modules.Visits;
@@ -69,6 +70,8 @@ builder.Services.AddScoped<WebhookNotifier>();
 builder.Services.AddScoped<AutoRuleService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<VisitEvents>();
+// Согласия (#34): единственная проверка «можно ли писать пациенту» для заявок, авто-правил и напоминаний.
+builder.Services.AddScoped<IConsentChecker, ConsentChecker>();
 // Сценарии напоминаний (#14): планировщик подписан на «визит завершён», отправка — фоновым воркером.
 builder.Services.AddScoped<ScenarioPlanner>();
 builder.Services.AddScoped<IVisitCompletedHandler>(sp => sp.GetRequiredService<ScenarioPlanner>());
@@ -173,6 +176,7 @@ app.MapAutoRulesEndpoints();
 app.MapMessageTemplatesEndpoints();
 app.MapCatalogEndpoints();
 app.MapVisitEndpoints();
+app.MapConsentEndpoints();
 app.MapDikidiEndpoints();
 app.MapScenarioEndpoints();
 

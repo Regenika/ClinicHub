@@ -356,18 +356,12 @@ public static class AgentEndpoints
         if (recs.Count == 0)
             return request.Status.ToString();
 
-        var hasPending = recs.Any(r => r.Status == RecipientStatus.Pending);
-        var hasScheduled = recs.Any(r => r.Status is RecipientStatus.Scheduled or RecipientStatus.Sending);
-        var failed = recs.Count(r => r.Status == RecipientStatus.Failed);
+        var failed = recs.Count(r => r.Status is RecipientStatus.Failed or RecipientStatus.Skipped);
         var sent = recs.Count(r => r.Status == RecipientStatus.Sent);
 
-        if (!hasPending && !hasScheduled)
+        if (Services.RequestOutcome.Final(recs) is { } final)
         {
-            request.Status = failed == 0
-                ? RequestStatus.Sent
-                : sent == 0
-                    ? RequestStatus.Failed
-                    : RequestStatus.Partial;
+            request.Status = final;
         }
         else if (sent > 0 || failed > 0)
         {

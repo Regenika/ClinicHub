@@ -8,6 +8,9 @@ public class SmsRequest
     public RequestStatus Status { get; set; } = RequestStatus.Created;
     public SendMode SendMode { get; set; } = SendMode.Now;
 
+    /// <summary>Цель: от неё зависит проверка согласий. Не указано — считаем рекламой (перестраховка).</summary>
+    public MessagePurpose Purpose { get; set; } = MessagePurpose.Marketing;
+
     /// <summary>Момент, когда заявка (как целое) должна превратиться в очередь.</summary>
     public DateTime? PlannedSendAt { get; set; }
 
