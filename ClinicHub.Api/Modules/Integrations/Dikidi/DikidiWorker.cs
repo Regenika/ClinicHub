@@ -6,7 +6,8 @@ namespace ClinicHub.Api.Modules.Integrations.Dikidi;
 /// а визиты в это время можно вести вручную.
 /// </summary>
 public sealed class DikidiWorker(
-    IServiceScopeFactory scopes, DikidiOptions options, DikidiSyncState state, ILogger<DikidiWorker> logger) : BackgroundService
+    IServiceScopeFactory scopes, DikidiOptions options, DikidiSyncState state, Data.DatabaseReadiness database,
+    ILogger<DikidiWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -20,6 +21,10 @@ public sealed class DikidiWorker(
 
         logger.LogInformation("Dikidi: синхронизация журнала раз в {Minutes} мин, период −{Back}…+{Ahead} дн.",
             (int)options.Interval.TotalMinutes, options.DaysBack, options.DaysAhead);
+
+        // Пока база не готова (#48), класть визиты некуда.
+        if (!await database.WaitAsync(ct))
+            return;
 
         try { await Task.Delay(TimeSpan.FromMinutes(1), ct); } catch (OperationCanceledException) { return; }
 

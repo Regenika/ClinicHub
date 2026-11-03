@@ -17,6 +17,10 @@ public class SchedulerWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("SchedulerWorker запущен");
+        // Пока база не готова (#48), работать не с чем.
+        if (!await _services.GetRequiredService<Data.DatabaseReadiness>().WaitAsync(stoppingToken))
+            return;
+
 
         while (!stoppingToken.IsCancellationRequested)
         {

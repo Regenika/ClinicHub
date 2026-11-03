@@ -21,6 +21,28 @@ builder.Services.AddSingleton(eventLog);
 builder.Logging.AddProvider(new EventLogLoggerProvider(eventLog));
 eventLog.Write("Сервер", "=== Запуск ClinicHub.Api ===");
 
+// ── Служба Windows (deploy/api, #48) ────────────────────────────────────────
+// На компьютере клиники сервер работает службой «ClinicHub API». Предупреждения и ошибки дополнительно идут
+// в журнал событий Windows «Приложение», источник ClinicHub.Api (его регистрирует установщик).
+builder.Services.AddWindowsService(o => o.ServiceName = "ClinicHub API");
+#pragma warning disable CA1416 // Журнал событий есть только в Windows; на других ОС настройка просто не читается.
+builder.Services.Configure<Microsoft.Extensions.Logging.EventLog.EventLogSettings>(o => o.SourceName = "ClinicHub.Api");
+#pragma warning restore CA1416
+
+// Секреты установленной службы — config\secrets.dat (зашифрован DPAPI), см. SecretStore. Главнее остальных источников.
+if (SecretStore.DirectoryFor(builder.Configuration, builder.Environment) is { } secretsDir)
+{
+    try
+    {
+        builder.Configuration.AddInMemoryCollection(SecretStore.Load(secretsDir, eventLog));
+    }
+    catch (Exception ex)
+    {
+        StartupError.Fail(eventLog,
+            $"Не удалось прочитать секреты из {secretsDir}: {ex.Message}. Запустите установщик сервера ещё раз — он задаст их заново.");
+    }
+}
+
 // ── Конфигурация ────────────────────────────────────────────────────────────
 // Секреты (JWT, пароль БД) в git не лежат: на компьютере разработчика — dotnet user-secrets,
 // на сервере клиники — переменные окружения. Как задать — README, раздел 1.
@@ -76,6 +98,9 @@ builder.Services.AddScoped<IConsentChecker, ConsentChecker>();
 builder.Services.AddScoped<ScenarioPlanner>();
 builder.Services.AddScoped<IVisitCompletedHandler>(sp => sp.GetRequiredService<ScenarioPlanner>());
 builder.Services.AddScoped<ReminderDispatcher>();
+// База подключается после запуска и при недоступности повторяется каждые 30 с (#48); остальные фоновые процессы её ждут.
+builder.Services.AddSingleton<DatabaseReadiness>();
+builder.Services.AddHostedService<DatabaseStartupService>();
 builder.Services.AddHostedService<ReminderWorker>();
 // Адаптер Dikidi (#15): только чтение журнала. Без логина и пароля в секретах — выключен.
 var dikidi = builder.Configuration.GetSection("Dikidi").Get<DikidiOptions>() ?? new DikidiOptions();
@@ -123,12 +148,8 @@ builder.Services.AddOpenApi(o =>
 var app = builder.Build();
 
 // ── Инициализация БД и seed ─────────────────────────────────────────────────
-await using (var scope = app.Services.CreateAsyncScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<ClinicHubDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DbInit");
-    await DbInitializer.InitializeAsync(db, logger, app.Configuration);
-}
+// Миграции и начальные данные — в DatabaseStartupService, уже после запуска: если базы нет, сервер не падает,
+// а ждёт её. Пока база не готова, запросы к API, которым она нужна, отвечают ошибкой.
 
 // ── Конвейер запросов ───────────────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
@@ -186,12 +207,18 @@ app.MapGet("/api/debug/log", (HttpContext ctx, int? tail) =>
         ? Results.Text(string.Join(Environment.NewLine, eventLog.Tail(tail ?? 300)), "text/plain; charset=utf-8")
         : Results.NotFound()).AllowAnonymous();
 
-app.MapGet("/api/debug/state", async (HttpContext ctx, ClinicHubDbContext db, DikidiSyncState dikidiState, CancellationToken ct) =>
-    IsLocal(ctx)
-        ? Results.Text(await DiagnosticsWorker.BuildAsync(db, detailed: true, ct, dikidiState), "text/plain; charset=utf-8")
-        : Results.NotFound()).AllowAnonymous();
+app.MapGet("/api/debug/state", async (
+        HttpContext ctx, ClinicHubDbContext db, DikidiSyncState dikidiState, DatabaseReadiness database, CancellationToken ct) =>
+    !IsLocal(ctx) ? Results.NotFound()
+    : !database.IsReady
+        ? Results.Text($"База данных: НЕТ СВЯЗИ — {database.LastError ?? "подключаюсь…"}\nСервер пробует снова каждые 30 секунд.",
+            "text/plain; charset=utf-8")
+        : Results.Text(await DiagnosticsWorker.BuildAsync(db, detailed: true, ct, dikidiState), "text/plain; charset=utf-8"))
+    .AllowAnonymous();
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }))
+// database: "ok" или "waiting" (нет связи с базой; причина — в журнале и на /api/debug/state).
+app.MapGet("/api/health", (DatabaseReadiness database) =>
+        Results.Ok(new { status = "ok", time = DateTime.UtcNow, database = database.IsReady ? "ok" : "waiting" }))
     .AllowAnonymous();
 
 app.Run();

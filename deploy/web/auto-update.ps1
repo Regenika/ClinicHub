@@ -1,4 +1,6 @@
-﻿# Автообновление сайта на демо-компьютере: новые коммиты на GitHub сами собираются и ставятся, без участия человека.
+﻿# Автообновление сайта и сервера на демо-компьютере: новые коммиты на GitHub сами собираются и ставятся, без участия человека.
+# Обновляется только то, что на компьютере уже установлено: служба «ClinicHub Web» (сайт) и/или «ClinicHub API»
+# (сервер, deploy/api, #48). Сначала поставьте их установщиками, потом включайте автообновление.
 #
 # Включить (один раз, от имени администратора; на компьютере нужны Git и .NET 10 SDK):
 #   powershell -ExecutionPolicy Bypass -File deploy\web\auto-update.ps1 -Register [-Branch master] [-Port 8080]
@@ -32,6 +34,7 @@ $FailedFile = Join-Path $Root "failed-commit.txt"
 $RepoUrl = "https://github.com/Regenika/ClinicHub.git"
 $TaskName = "ClinicHub Web Auto-Update"
 $ServiceName = "ClinicHub Web"
+$ApiServiceName = "ClinicHub API"
 
 # ── Включение и выключение ───────────────────────────────────────────────────
 if ($Register -or $Unregister) {
@@ -46,7 +49,7 @@ if ($Register -or $Unregister) {
             Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
             Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
         }
-        Write-Host "Автообновление выключено. Сайт остаётся установленным; папку $Root можно удалить." -ForegroundColor Green
+        Write-Host "Автообновление выключено. Сайт и сервер остаются установленными; папку $Root можно удалить." -ForegroundColor Green
         return
     }
 
@@ -145,9 +148,24 @@ try {
     Git checkout --quiet --force --detach $head | Out-Null
     Git clean -fdq -e artifacts | Out-Null
 
-    Log "Собираю сайт"
-    if ((Run-Script (Join-Path $Src "deploy\web\build-package.ps1") @("-NoZip")) -ne 0) {
-        throw "сборка не удалась (подробности выше)"
+    # Что обновлять: установленное. Если не установлено ничего из двух — сайт, как раньше (совместимость).
+    $updateApi = [bool](Get-Service $ApiServiceName -ErrorAction SilentlyContinue)
+    $updateWeb = [bool](Get-Service $ServiceName -ErrorAction SilentlyContinue) -or -not $updateApi
+    $apiBuild = Join-Path $Src "deploy\api\build-package.ps1"
+    if ($updateApi -and -not (Test-Path $apiBuild)) {
+        Log "В этом коммите нет установщика сервера (deploy\api) — сервер не обновляю."
+        $updateApi = $false
+    }
+
+    if ($updateApi) {
+        Log "Собираю сервер"
+        if ((Run-Script $apiBuild @("-NoZip")) -ne 0) { throw "сборка сервера не удалась (подробности выше)" }
+    }
+    if ($updateWeb) {
+        Log "Собираю сайт"
+        if ((Run-Script (Join-Path $Src "deploy\web\build-package.ps1") @("-NoZip")) -ne 0) {
+            throw "сборка не удалась (подробности выше)"
+        }
     }
 
     # Пока шла сборка (несколько минут), автообновление могли выключить — тогда не ставим.
@@ -156,9 +174,18 @@ try {
         return
     }
 
-    Log "Устанавливаю"
-    if ((Run-Script (Join-Path $Src "artifacts\web-package\install.ps1") @("-Port", $port, "-Unattended")) -ne 0) {
-        throw "установка не удалась (подробности выше)"
+    if ($updateApi) {
+        Log "Устанавливаю сервер"
+        # Порт сервера установщик берёт тот же, что у установленной службы, — по умолчанию 5112.
+        if ((Run-Script (Join-Path $Src "artifacts\api-package\install.ps1") @("-Unattended")) -ne 0) {
+            throw "установка сервера не удалась (подробности выше)"
+        }
+    }
+    if ($updateWeb) {
+        Log "Устанавливаю сайт"
+        if ((Run-Script (Join-Path $Src "artifacts\web-package\install.ps1") @("-Port", $port, "-Unattended")) -ne 0) {
+            throw "установка не удалась (подробности выше)"
+        }
     }
 
     Set-Content $DeployedFile $head -Encoding ASCII
@@ -172,8 +199,10 @@ try {
     if ($head) {
         Set-Content $FailedFile $head -Encoding ASCII
         # Сайт мог остаться остановленным посреди установки — пусть работает прежняя версия, если файлы целы.
-        $svc = Get-Service $ServiceName -ErrorAction SilentlyContinue
-        if ($svc -and $svc.Status -ne "Running") { Start-Service $ServiceName -ErrorAction SilentlyContinue }
+        foreach ($name in $ServiceName, $ApiServiceName) {
+            $svc = Get-Service $name -ErrorAction SilentlyContinue
+            if ($svc -and $svc.Status -ne "Running") { Start-Service $name -ErrorAction SilentlyContinue }
+        }
     }
     exit 1
 }
