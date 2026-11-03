@@ -34,11 +34,14 @@ public static class AutoRulesEndpoints
     {
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.TextTemplate))
             return Results.BadRequest("Укажите название и текст сообщения.");
+        if (!Enum.IsDefined(dto.Purpose))
+            return Results.BadRequest("purpose: Service или Marketing.");
 
         var rule = new AutoRule
         {
             Name = dto.Name.Trim(),
             Trigger = dto.Trigger,
+            Purpose = dto.Purpose,
             TextTemplate = dto.TextTemplate,
             DaysOffset = dto.DaysOffset,
             SendTime = dto.SendTime,
@@ -62,9 +65,12 @@ public static class AutoRulesEndpoints
 
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.TextTemplate))
             return Results.BadRequest("Укажите название и текст сообщения.");
+        if (!Enum.IsDefined(dto.Purpose))
+            return Results.BadRequest("purpose: Service или Marketing.");
 
         rule.Name = dto.Name.Trim();
         rule.Trigger = dto.Trigger;
+        rule.Purpose = dto.Purpose;
         rule.TextTemplate = dto.TextTemplate;
         rule.DaysOffset = dto.DaysOffset;
         rule.SendTime = dto.SendTime;
@@ -90,6 +96,7 @@ public static class AutoRulesEndpoints
         Id = r.Id,
         Name = r.Name,
         Trigger = r.Trigger.ToString(),
+        Purpose = r.Purpose.ToString(),
         TextTemplate = r.TextTemplate,
         DaysOffset = r.DaysOffset,
         SendTime = r.SendTime,
