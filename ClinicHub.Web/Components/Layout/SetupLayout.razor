@@ -1,0 +1,13 @@
+@inherits LayoutComponentBase
+
+@* Макет служебных страниц, которым нельзя обращаться к БД (её ещё нет или она недоступна). *@
+
+<header class="site-header">
+    <div class="container site-header__row">
+        <span class="logo">CLINICHUB</span>
+    </div>
+</header>
+
+<main id="main">
+    @Body
+</main>

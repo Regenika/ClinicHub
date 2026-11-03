@@ -1,0 +1,32 @@
+@* Блок «Отзывы»: ссылки на площадки из настроек сайта и одна цитата. *@
+
+<section id="@Settings.Anchor" class="container section split" aria-labelledby="@TitleId">
+    <div class="split__aside stack">
+        <h2 id="@TitleId" class="h2">@Settings.Title</h2>
+        <p class="muted-strong">@Settings.Intro</p>
+        <div class="row-wrap">
+            @if (Clinic.ProDoktorov is { } pd)
+            {
+                <a class="btn btn--outline" href="@pd.Url" rel="noopener">ПроДокторов · @pd.Rating</a>
+            }
+            @if (Clinic.YandexMaps is { } ym)
+            {
+                <a class="btn btn--outline" href="@ym.Url" rel="noopener">Яндекс Карты · @ym.Rating</a>
+            }
+        </div>
+    </div>
+    @if (Settings.Quote is { } review)
+    {
+        <blockquote class="card review">
+            <p>@review.Text</p>
+            <footer class="muted small">@review.Signature</footer>
+        </blockquote>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ReviewsBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private string TitleId => Settings.Anchor + "-title";
+}

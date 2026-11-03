@@ -492,8 +492,24 @@ public partial class CreateRequestPage : ContentPage
             ? $"запланирована на {(hasDate ? ScheduleDateEntry.Text : "(дата не указана)")}{(hasTime ? ", " + ScheduleTimeEntry.Text : "")}"
             : "уйдёт сразу после одобрения";
 
-        SummaryLabel.Text = $"Тип: {typeLabel} ({count} получат.) · Отправка: {scheduleLabel}.";
+        var purposeLabel = SelectedPurpose switch
+        {
+            MessagePurpose.Service => "сервисная",
+            MessagePurpose.Marketing => "рекламная (только с согласием)",
+            _ => "цель не выбрана",
+        };
+        SummaryLabel.Text = $"Тип: {typeLabel} ({count} получат.) · {purposeLabel} · Отправка: {scheduleLabel}.";
     }
+
+    /// <summary>Порядок пунктов — как в PurposePicker в XAML.</summary>
+    private MessagePurpose? SelectedPurpose => (PurposePicker?.SelectedIndex ?? -1) switch
+    {
+        0 => MessagePurpose.Service,
+        1 => MessagePurpose.Marketing,
+        _ => null,
+    };
+
+    private void OnPurposeChanged(object? sender, EventArgs e) => UpdateSummary();
 
     // --------------------------------------------------------------- Отправка
 
@@ -517,6 +533,12 @@ public partial class CreateRequestPage : ContentPage
         if (_selectedPatients.Count == 0)
         {
             ShowError("Выберите получателей во вкладке «Контакты» справа.");
+            return;
+        }
+
+        if (SelectedPurpose is not { } purpose)
+        {
+            ShowError("Выберите цель рассылки: сервисная или рекламная.");
             return;
         }
 
@@ -548,6 +570,7 @@ public partial class CreateRequestPage : ContentPage
         var dto = new CreateSmsRequestDto
         {
             Type = type,
+            Purpose = purpose,
             SendMode = mode,
             // Пользователь вводит время по своим часам, а сервер хранит и сравнивает UTC.
             // Без перевода время уходило без пояса, сервер считал его UTC, и рассылка уходила на 3 часа позже.

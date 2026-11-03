@@ -1,5 +1,5 @@
 @* Заголовок, описание, canonical и Open Graph для страницы. *@
-@inject IOptionsSnapshot<SiteContent> Content
+@inject SiteStore Store
 
 <PageTitle>@Title</PageTitle>
 <HeadContent>
@@ -15,7 +15,7 @@
     }
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="ru_RU" />
-    <meta property="og:site_name" content="@Content.Value.Clinic.Name" />
+    <meta property="og:site_name" content="@clinic.Name" />
     <meta property="og:title" content="@Title" />
     <meta property="og:description" content="@Description" />
     @ChildContent
@@ -32,6 +32,10 @@
 
     [CascadingParameter] private HttpContext? HttpContext { get; set; }
 
+    private ClinicInfo clinic = new();
+
+    protected override async Task OnInitializedAsync() => clinic = await Store.GetClinicAsync();
+
     private string? CanonicalUrl =>
-        SiteUrls.BaseUrl(Content.Value.Clinic, HttpContext?.Request) is { } b ? b + Path : null;
+        SiteUrls.BaseUrl(clinic, HttpContext?.Request) is { } b ? b + Path : null;
 }

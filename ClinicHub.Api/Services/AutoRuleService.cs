@@ -87,6 +87,8 @@ public class AutoRuleService
             var request = new SmsRequest
             {
                 Type = RequestType.Personal,
+                // Поздравление со скидкой — реклама: планировщик пропустит пациентов без согласия (Issue #34).
+                Purpose = rule.Purpose,
                 Title = $"Авто: {rule.Name} — {patient.FullName}",
                 Status = RequestStatus.Approved,
                 SendMode = SendMode.Now,

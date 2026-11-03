@@ -1,0 +1,28 @@
+@* Блок «Статьи». *@
+
+<section id="@Settings.Anchor" class="container section stack-lg" aria-labelledby="@TitleId">
+    <h2 id="@TitleId" class="h2">@Settings.Title</h2>
+    <div class="cards">
+        @foreach (var p in Settings.Items)
+        {
+            <article class="post">
+                <span class="muted small">@p.Tag</span>
+                @if (string.IsNullOrEmpty(p.Url))
+                {
+                    <h3 class="post__title">@p.Title</h3>
+                }
+                else
+                {
+                    <h3 class="post__title"><a href="@p.Url">@p.Title</a></h3>
+                }
+            </article>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PostsBlock Settings { get; set; } = default!;
+    [Parameter, EditorRequired] public ClinicInfo Clinic { get; set; } = default!;
+
+    private string TitleId => Settings.Anchor + "-title";
+}

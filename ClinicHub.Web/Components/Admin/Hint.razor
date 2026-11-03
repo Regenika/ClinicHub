@@ -1,0 +1,9 @@
+@* Подсказка под полем формы админки. *@
+@if (!string.IsNullOrEmpty(Text))
+{
+    <span class="muted small">@Text</span>
+}
+
+@code {
+    [Parameter] public string? Text { get; set; }
+}

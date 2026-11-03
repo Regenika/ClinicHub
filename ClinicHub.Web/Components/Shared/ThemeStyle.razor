@@ -1,0 +1,29 @@
+@* Палитра из «Настроек сайта» прямо в <head> (App.razor). Не через HeadContent: на странице действует только один
+   HeadContent — последний отрисованный, и SEO-блок страницы перекрыл бы палитру.
+   Значения проверены как #RRGGBB (Site/Theme.cs), поэтому вставлять их в CSS безопасно. *@
+@using ClinicHub.Web.Data
+@inject DbConnectionStore Db
+@inject SiteStore Store
+
+@if (css.Length > 0)
+{
+    <style>@((MarkupString)css)</style>
+}
+
+@code {
+    private string css = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Db.State != DbState.Ready)
+            return;
+        try
+        {
+            css = Theme.Css(await Store.GetClinicAsync());
+        }
+        catch (Exception ex) when (SiteCache.IsDatabaseUnavailable(ex))
+        {
+            // Нет связи с базой — страница всё равно покажется в цветах по умолчанию.
+        }
+    }
+}

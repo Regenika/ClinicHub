@@ -1,5 +1,6 @@
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Modules.Catalog;
+using ClinicHub.Api.Modules.Consents;
 using ClinicHub.Api.Modules.Messaging.Scenarios;
 using ClinicHub.Api.Modules.Shared;
 using ClinicHub.Api.Modules.Visits;
@@ -35,7 +36,7 @@ public sealed class ScenarioTests : IDisposable
         _clock = new FakeClock(DateTime.UtcNow);
         _clock.SetMoscow(2026, 10, 20, 12, 0);
         _planner = new ScenarioPlanner(_db, _clock, NullLogger<ScenarioPlanner>.Instance);
-        _dispatcher = new ReminderDispatcher(_db, _clock, NullLogger<ReminderDispatcher>.Instance);
+        _dispatcher = new ReminderDispatcher(_db, new ConsentChecker(_db), _clock, NullLogger<ReminderDispatcher>.Instance);
 
         _db.Services.AddRange(
             new Service { Id = "botox", Name = "Ботулинотерапия" },
@@ -235,7 +236,7 @@ public sealed class ScenarioTests : IDisposable
     }
 
     [Fact]
-    public async Task Рекламное_не_отправляется_без_модуля_согласий()
+    public async Task Рекламное_не_отправляется_без_согласия_на_рекламу()
     {
         AddDue(ScenarioPurpose.Marketing);
 
@@ -243,8 +244,25 @@ public sealed class ScenarioTests : IDisposable
 
         var r = Reminders().Single();
         Assert.Equal(ReminderStatus.Skipped, r.Status);
-        Assert.Contains("согласий", r.StatusReason);
+        Assert.Equal("нет согласия на рекламу по SMS", r.StatusReason);
         Assert.Empty(_db.SmsRequests);
+    }
+
+    [Fact]
+    public async Task Рекламное_уходит_при_согласии_на_рекламу_по_SMS()
+    {
+        _db.ConsentRecords.Add(new ConsentRecord
+        {
+            PatientId = _patient.Id, Purpose = MessagePurpose.Marketing, Channel = ConsentChannel.Sms, Granted = true,
+            Source = ConsentSource.PaperForm, At = _clock.Utc.AddDays(-1),
+        });
+        _db.SaveChanges();
+        AddDue(ScenarioPurpose.Marketing);
+
+        Assert.Equal(1, await _dispatcher.RunAsync(default));
+
+        Assert.Equal(ReminderStatus.Sent, Reminders().Single().Status);
+        Assert.Equal(MessagePurpose.Marketing, _db.SmsRequests.Single().Purpose);
     }
 
     [Fact]

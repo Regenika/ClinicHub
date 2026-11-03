@@ -1,0 +1,45 @@
+@* Выбор картинки из медиатеки с превью. Загрузка новых — в разделе «Медиатека». *@
+@inject MediaLibrary Media
+
+<div class="field">
+    <label for="@Id">@Label</label>
+    <div class="media-picker">
+        @if (current is not null)
+        {
+            <img class="media-picker__thumb" src="@current.Url" alt="" />
+        }
+        else
+        {
+            <span class="media-picker__thumb media-picker__thumb--empty">нет</span>
+        }
+        <select id="@Id" value="@(Value?.ToString() ?? "")" @onchange="OnChange">
+            <option value="">— без картинки —</option>
+            @foreach (var m in items)
+            {
+                <option value="@m.Id">@m.FileName@(string.IsNullOrEmpty(m.Alt) ? "" : $" — {m.Alt}")</option>
+            }
+        </select>
+    </div>
+    @if (current is not null && string.IsNullOrEmpty(current.Alt))
+    {
+        <span class="muted small">У картинки нет описания — добавьте его в <a href="/admin/media" target="_blank">медиатеке</a> (нужно незрячим и поисковикам).</span>
+    }
+    <Hint Text="@Hint" />
+    <span class="muted small"><a href="/admin/media" target="_blank">Загрузить новую картинку</a> — потом обновите эту страницу.</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string Id { get; set; } = "media";
+    [Parameter] public int? Value { get; set; }
+    [Parameter] public EventCallback<int?> ValueChanged { get; set; }
+
+    private IReadOnlyList<MediaInfo> items = [];
+    private MediaInfo? current => items.FirstOrDefault(m => m.Id == Value);
+
+    protected override async Task OnInitializedAsync() => items = await Media.ListAsync();
+
+    private Task OnChange(ChangeEventArgs e) =>
+        ValueChanged.InvokeAsync(int.TryParse(e.Value as string, out var id) ? id : null);
+}
