@@ -6,8 +6,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$TaskName = "ClinicHub Web"
+$ServiceName = "ClinicHub Web"
+$OldTaskName = "ClinicHub Web"
 $FirewallRule = "ClinicHub Web"
+$EventSource = "ClinicHub.Web"
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -19,10 +21,16 @@ if (-not $isAdmin) {
 
 Write-Host "Удаление сайта клиники (ClinicHub.Web)" -ForegroundColor Yellow
 
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Автозапуск убран."
+if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+    & sc.exe delete $ServiceName | Out-Null
+    Write-Host "Служба «$ServiceName» удалена."
+}
+# Задача планировщика от прошлых версий установщика.
+if (Get-ScheduledTask -TaskName $OldTaskName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $OldTaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $OldTaskName -Confirm:$false
+    Write-Host "Старая задача планировщика удалена."
 }
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -and $_.CommandLine -like "*$InstallDir*" -and $_.ProcessId -ne $PID } |
@@ -42,6 +50,14 @@ if (Test-Path $content) {
 if (Test-Path $InstallDir) {
     Remove-Item $InstallDir -Recurse -Force
     Write-Host "Папка $InstallDir удалена."
+}
+# Родительскую папку (C:\ClinicHub) убираем, только если в ней больше ничего нет: там могут жить другие части ClinicHub.
+$parent = Split-Path $InstallDir -Parent
+if ($parent -and (Test-Path $parent) -and -not (Get-ChildItem $parent -Force | Select-Object -First 1)) {
+    Remove-Item $parent -Force
+}
+if ([System.Diagnostics.EventLog]::SourceExists($EventSource)) {
+    Remove-EventLog -Source $EventSource
 }
 $shortcut = Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "Сайт клиники.url"
 Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
