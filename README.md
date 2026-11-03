@@ -59,7 +59,8 @@ dotnet run --launch-profile http
 со случайным паролем и один раз пишет его в консоль и в журнал (`logs/clinichub.log`), ищите строку «Создан первый администратор».
 Свой пароль можно задать заранее: `dotnet user-secrets set "Seed:AdminPassword" "..."` или переменная `SEED_ADMIN_PASSWORD`.
 
-Один раз (PowerShell от имени администратора) откройте порты в брандмауэре:
+Один раз (PowerShell от имени администратора) откройте порты в брандмауэре (на компьютере разработчика;
+на компьютере клиники это делает установщик, см. раздел 7):
 
 ```powershell
 netsh advfirewall firewall add rule name="ClinicHub API" dir=in action=allow protocol=TCP localport=5112 profile=any
@@ -142,3 +143,16 @@ powershell -ExecutionPolicy Bypass -File deploy\web\build-package.ps1
 
 Скрипт соберёт `artifacts\ClinicHub-Web-<дата>.zip` (автономная сборка, .NET на компьютер клиники ставить не нужно).
 Архив распаковать на компьютере клиники и запустить `install.cmd`. Подробно — в `deploy/web/README.txt`.
+
+## 7. Установка на компьютер клиники
+
+Сервер и сайт ставятся службами Windows («ClinicHub API» и «ClinicHub Web»), база — на SQL Server на другом компьютере
+(сейчас у Свята, доступ по VPN или туннелю). Пошаговая инструкция на одной странице и чек-лист проверки — `deploy/README.txt`.
+
+- Сервер: `deploy/api` — `build-package.ps1` собирает `artifacts\ClinicHub-Api-<дата>.zip`, в архиве `install.cmd`.
+  Установщик спрашивает подключение к базе и Dikidi, сам создаёт `Jwt:Secret`; секреты хранятся зашифрованными
+  (`C:\ClinicHub\Api\config\secrets.dat`, DPAPI службы) и не попадают ни в git, ни в журнал. Порт 5112 и автопоиск
+  (UDP 45454) открыты только для локальной сети. Без связи с базой сервер не падает, а повторяет подключение каждые 30 с.
+- Сайт: `deploy/web` (раздел 6).
+- Автообновление обеих служб с GitHub (демо-компьютеры): `deploy\web\auto-update.ps1 -Register`.
+- Резервные копии базы — на компьютере с SQL Server: `deploy\db\backup-setup.ps1 -Register`, восстановление — `deploy/db/RESTORE.txt`.

@@ -4,7 +4,8 @@ namespace ClinicHub.Api.Modules.Messaging.Scenarios;
 /// Фон сценариев: раз в минуту отправляет наступившие напоминания, раз в час ищет «давно не были».
 /// Обе операции идемпотентны, поэтому частый запуск безопасен.
 /// </summary>
-public sealed class ReminderWorker(IServiceScopeFactory scopes, TimeProvider clock, ILogger<ReminderWorker> logger) : BackgroundService
+public sealed class ReminderWorker(
+    IServiceScopeFactory scopes, TimeProvider clock, Data.DatabaseReadiness database, ILogger<ReminderWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan DispatchEvery = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan ScanEvery = TimeSpan.FromHours(1);
@@ -12,6 +13,10 @@ public sealed class ReminderWorker(IServiceScopeFactory scopes, TimeProvider clo
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("ReminderWorker запущен");
+        // Пока база не готова (#48), работать не с чем.
+        if (!await database.WaitAsync(stoppingToken))
+            return;
+
         var lastScan = DateTimeOffset.MinValue;
 
         while (!stoppingToken.IsCancellationRequested)

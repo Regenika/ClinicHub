@@ -1,0 +1,41 @@
+ВОССТАНОВЛЕНИЕ БАЗЫ CLINICHUB ИЗ РЕЗЕРВНОЙ КОПИИ
+================================================
+
+Копии делает deploy\db\backup-setup.ps1 на компьютере с SQL Server: файлы вида ClinicHub-2026-11-04-0300.bak
+в папке копий (по умолчанию C:\ClinicHub-Backups), журнал — backup.log там же.
+
+Восстанавливают на том же компьютере с SQL Server. Нужен вход в SQL Server администратором
+(SQL Server Management Studio или sqlcmd).
+
+1. Остановите то, что работает с базой. На компьютере клиники:
+   Пуск → «Службы» → «ClinicHub API» и «ClinicHub Web» → «Остановить».
+
+2. Выберите копию (обычно самую свежую) и восстановите. В SSMS: «Создать запрос» к серверу и выполните,
+   подставив имя файла:
+
+     ALTER DATABASE ClinicHub SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+     RESTORE DATABASE ClinicHub FROM DISK = N'C:\ClinicHub-Backups\ClinicHub-2026-11-04-0300.bak'
+         WITH REPLACE, CHECKSUM;
+     ALTER DATABASE ClinicHub SET MULTI_USER;
+
+   Или в командной строке от администратора, одной строкой:
+     sqlcmd -S .\SQLEXPRESS -E -Q "ALTER DATABASE ClinicHub SET SINGLE_USER WITH ROLLBACK IMMEDIATE; RESTORE DATABASE ClinicHub FROM DISK=N'C:\ClinicHub-Backups\ClinicHub-2026-11-04-0300.bak' WITH REPLACE, CHECKSUM; ALTER DATABASE ClinicHub SET MULTI_USER;"
+
+3. Запустите службы «ClinicHub API» и «ClinicHub Web» на компьютере клиники. Если копия старше текущей версии
+   программы, сервер сам применит недостающие миграции.
+
+Всё, что сделано после времени копии (новые пациенты, заявки, правки сайта), пропадёт.
+
+ПРОВЕРИТЬ КОПИЮ, НЕ ТРОГАЯ РАБОЧУЮ БАЗУ
+Восстановите копию под другим именем, посмотрите данные и удалите её:
+
+     RESTORE FILELISTONLY FROM DISK = N'C:\ClinicHub-Backups\ClinicHub-2026-11-04-0300.bak';
+     -- в ответе два логических имени (LogicalName): файла данных и журнала — подставьте их ниже
+     RESTORE DATABASE ClinicHubCheck FROM DISK = N'C:\ClinicHub-Backups\ClinicHub-2026-11-04-0300.bak'
+         WITH MOVE N'<имя данных>' TO N'C:\ClinicHub-Backups\ClinicHubCheck.mdf',
+              MOVE N'<имя журнала>' TO N'C:\ClinicHub-Backups\ClinicHubCheck_log.ldf';
+     -- ... проверка ...
+     DROP DATABASE ClinicHubCheck;
+
+Копии лежат только на этом компьютере. Куда класть копию вне его (второй диск, облако) — вопрос к клинике
+(docs/CLINIC-QUESTIONS.md).

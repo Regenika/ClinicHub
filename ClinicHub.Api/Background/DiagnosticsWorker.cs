@@ -16,17 +16,22 @@ public class DiagnosticsWorker : BackgroundService
     private readonly IServiceScopeFactory _scopes;
     private readonly EventLog _log;
     private readonly DikidiSyncState _dikidi;
+    private readonly DatabaseReadiness _database;
     private string _last = "";
 
-    public DiagnosticsWorker(IServiceScopeFactory scopes, EventLog log, DikidiSyncState dikidi)
+    public DiagnosticsWorker(IServiceScopeFactory scopes, EventLog log, DikidiSyncState dikidi, DatabaseReadiness database)
     {
         _scopes = scopes;
         _log = log;
         _dikidi = dikidi;
+        _database = database;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        // Пока база не готова (#48), снимок собрать не из чего; причину пишет DatabaseStartupService.
+        if (!await _database.WaitAsync(ct))
+            return;
         try { await Task.Delay(TimeSpan.FromSeconds(8), ct); } catch (OperationCanceledException) { return; }
 
         while (!ct.IsCancellationRequested)
