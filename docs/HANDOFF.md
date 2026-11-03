@@ -38,6 +38,21 @@
 
 ---
 
+## 2026-10-26 — AlDanosAl (сессия Claude) — ветка feature/ci-github-actions
+
+**Сделано (Issue #42):** автопроверка в GitHub Actions, без секретов.
+- `.github/workflows/ci.yml` «Проверка» — на каждый PR и push в `master`, Linux: сборка Core/Api/тестов и сайта, `dotnet test`, `dotnet ef migrations has-pending-model-changes` для сервера и для сайта (как только у сайта появится снапшот модели — после приёма его ветки, #38).
+- `.github/workflows/ci-apps.yml` «Проверка приложений» — Windows: нагрузки `maui-android` и `maui-windows`, сборка Admin и SmsAgent под Windows и Android. Только если менялись приложения, Core, `.slnx` или сам workflow, и на push в `master` (Windows дольше). iOS и Mac Catalyst не собираем — клинике не нужны.
+- Значки в README, PLAN «Как работаем» п. 6: PR принимаем только с зелёной проверкой.
+- Из «В работе» убраны влитые ветки сценариев и Dikidi.
+- По ошибке получился дубль — PR #45 (`feature/ci-checks`), закрыт. Ветку удалить из сессии нельзя (нет прав) — её можно удалить на GitHub кнопкой в закрытом PR.
+
+**Следующие шаги:** #38 (ветка сайта) и #34 (согласия). Включить защиту `master` с обязательными проверками — решение Свята (настройка репозитория).
+**Известные проблемы:** —
+**Решения:** —
+
+---
+
 ## 2026-10-26 — AlDanosAl (сессия Claude) — ветка feature/consents
 
 **Сделано (Issue #34, PLAN 1.2, ARCHITECTURE §3.2):** модуль `ClinicHub.Api/Modules/Consents`, схема `consents`.
