@@ -6,6 +6,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Любая неожиданная ошибка — показать её и не закрывать окно, иначе причину не увидеть.
+trap {
+    Write-Host ""
+    Write-Host "ОШИБКА: $_" -ForegroundColor Red
+    Read-Host "Нажмите Enter, чтобы закрыть окно"
+    exit 1
+}
 $ServiceName = "ClinicHub API"
 $WebServiceName = "ClinicHub Web"
 $UpdateTask = "ClinicHub Web Auto-Update"
@@ -40,10 +47,18 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 2
 
-Get-NetFirewallRule -ErrorAction SilentlyContinue |
-    Where-Object { $_.DisplayName -like "clinichub.api*" -or $_.DisplayName -in @("ClinicHub API", "ClinicHub discovery") } |
-    Remove-NetFirewallRule
-Write-Host "Правила брандмауэра удалены."
+# Правила установщика и те, что Windows создаёт сама при первом запуске (clinichub.api.exe). По имени — без перебора
+# всех правил Windows.
+foreach ($rule in @("ClinicHub API", "ClinicHub discovery", "clinichub.api*")) {
+    Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+}
+# Правило сайта («ClinicHub Web») не трогаем.
+$left = @(Get-NetFirewallRule -DisplayName "ClinicHub API", "ClinicHub discovery", "clinichub.api*" -ErrorAction SilentlyContinue)
+if ($left.Count -gt 0) {
+    Write-Host "Не удалось удалить правила брандмауэра: $(($left.DisplayName | Sort-Object -Unique) -join ', '). Удалите их вручную в «Брандмауэр Защитника Windows» → «Дополнительные параметры» → «Правила для входящих подключений»." -ForegroundColor Yellow
+} else {
+    Write-Host "Правила брандмауэра удалены."
+}
 
 if (Test-Path $InstallDir) {
     Remove-Item $InstallDir -Recurse -Force
