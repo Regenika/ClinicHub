@@ -27,14 +27,17 @@
 		       <MauiXaml Update="MyPage.xaml" Inflator="Runtime" /> (force runtime inflation) -->
 		<MauiXamlInflator>SourceGen</MauiXamlInflator>
 
-		<!-- Display name -->
-		<ApplicationTitle>ClinicHub.SmsAgent</ApplicationTitle>
+		<!-- Название под иконкой на телефоне -->
+		<ApplicationTitle>ClinicHub SMS</ApplicationTitle>
 
-		<!-- App Identifier -->
-		<ApplicationId>com.companyname.clinichub.smsagent</ApplicationId>
+		<!-- Имя пакета Android (#50). Не менять: с другим именем телефон считает приложение новым, обновление поверх
+		     не встанет, а настройки подключения останутся в старом. Ключ подписи тоже постоянный — см. README §3. -->
+		<ApplicationId>ru.regenika.clinichub.smsagent</ApplicationId>
 
-		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+		<!-- Версии. Для релиза их задаёт сборка на GitHub (.github/workflows/smsagent-release.yml):
+		     ApplicationDisplayVersion — из тега smsagent-v<версия>, ApplicationVersion (versionCode) — номер запуска,
+		     чтобы каждая следующая сборка ставилась поверх. Здесь — значения для сборки у себя. -->
+		<ApplicationDisplayVersion>0.0.1</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
@@ -49,10 +52,10 @@
 
 	<ItemGroup>
 		<!-- App Icon -->
-		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
+		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#0F766E" />
 
 		<!-- Splash Screen -->
-		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
+		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#0F766E" BaseSize="128,128" />
 
 		<!-- Images -->
 		<MauiImage Include="Resources\Images\*" />

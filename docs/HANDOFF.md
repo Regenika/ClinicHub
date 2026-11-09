@@ -18,6 +18,23 @@
 | Ветка | Кто | Меняет схему БД? | Суть |
 |---|---|---|---|
 | feature/deploy-api | AlDanosAl | нет | Issue #48: установщик сервера (служба, секреты, брандмауэр), автообновление обеих служб, бэкапы базы на компьютере с SQL Server |
+| feature/smsagent-release | AlDanosAl | нет | Issue #50: имя пакета `ru.regenika.clinichub.smsagent`, подписанный APK SmsAgent в GitHub Releases по тегу `smsagent-v*`. Ветка от feature/deploy-api (правит `deploy/README.txt` из #49) |
+
+---
+
+## 2026-11-09 — AlDanosAl (сессия Claude) — ветка feature/smsagent-release
+
+**Сделано (Issue #50):**
+- SmsAgent: имя пакета `ru.regenika.clinichub.smsagent` (было шаблонное `com.companyname…`), название под иконкой «ClinicHub SMS», своя иконка и заставка (облачко сообщения на #0F766E) вместо шаблона .NET.
+- `.github/workflows/smsagent-release.yml`: по тегу `smsagent-v<x.y.z>` — Release APK, подпись ключом из секретов (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; пароли сборка берёт из переменных окружения, не из командной строки), проверка подписи `apksigner`, GitHub Release с `ClinicHub-SmsAgent-<версия>.apk`. versionCode = `github.run_number`, versionName = версия из тега. Вручную и на PR (если менялся workflow или csproj) — сборка в артефактах без релиза. Без секретов — отладочная подпись, ничего не публикуется.
+- `tools/new-smsagent-keystore.ps1`: один раз создаёт ключ (PKCS12, RSA 4096, ~27 лет, случайный пароль) в `%USERPROFILE%\ClinicHub-keys` — вне репозитория, плюс base64 и файл с именами секретов и отпечатком. Не перезаписывает существующий ключ.
+- `.gitignore`: `*.keystore`, `*.jks`, файлы base64 и секретов ключа.
+- README §3 (установка из релиза, выпуск версии, ключ, сборка у себя), README §4, `deploy/README.txt` шаг 5.
+
+**Не доделано / в работе:** ключ создаёт AlDanosAl у себя и передаёт Святу лично; Свят вносит секреты; затем тег `smsagent-v0.1.0` и проверка на телефоне (установка по ссылке, SMS, «Подключиться», `smsagent-v0.1.1` поверх).
+**Следующие шаги:** после #49 и #50 — #39 (общий вход).
+**Известные проблемы:** старую сборку с именем `com.companyname.clinichub.smsagent` на телефонах нужно удалить вручную — новая встанет рядом. Сборка у себя подписана отладочным ключом компьютера и поверх релизной не ставится.
+**Решения:** имя пакета — как предложил Свят в #50.
 
 ---
 

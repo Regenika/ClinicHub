@@ -366,3 +366,8 @@ MigrationBackup/
 FodyWeavers.xsd
 # Сайт: зашифрованное подключение к базе и ключи шифрования (пишет страница /nastroika-bd). Никогда в git.
 ClinicHub.Web/config/
+# Ключ подписи SmsAgent и его копия в base64 (#50). Никогда в git: хранятся у Свята и в секретах репозитория.
+*.keystore
+*.jks
+*.keystore.base64.txt
+smsagent-signing*.txt
