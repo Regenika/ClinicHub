@@ -2,12 +2,12 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="ClinicHub.SmsAgent.MainPage"
-             Title="SmsAgent">
+             Title="ClinicHub SMS">
 
     <ScrollView>
         <VerticalStackLayout Padding="20" Spacing="14">
 
-            <Label Text="ClinicHub SmsAgent" FontSize="24" FontAttributes="Bold" />
+            <Label Text="ClinicHub SMS" FontSize="24" FontAttributes="Bold" />
             <Label Text="Этот телефон будет рассылать SMS клиники. Нажмите «Подключиться»: приложение само найдёт компьютер в Wi-Fi и дальше будет работать в фоне — приложение можно закрыть."
                    FontSize="14" />
 
