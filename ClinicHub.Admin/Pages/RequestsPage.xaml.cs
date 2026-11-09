@@ -42,7 +42,7 @@ public partial class RequestsPage : ContentPage
             return;
 
         var action = await DisplayActionSheetAsync(
-            $"Заявка #{detail.Id} — {detail.Status}",
+            $"Заявка #{detail.Id} — {RuText.RequestStatus(detail.Status)}",
             "Закрыть", null,
             "Открыть",
             "Одобрить",
@@ -82,14 +82,16 @@ public partial class RequestsPage : ContentPage
 
     private async Task ShowDetail(SmsRequestOutDto d)
     {
-        string message = $"Тип: {d.Type}\nРежим: {d.SendMode}\n" +
+        string message = $"Статус: {RuText.RequestStatus(d.Status)}\nЦель: {RuText.Purpose(d.Purpose)}\n" +
+                         $"Тип: {RuText.RequestType(d.Type)}\nОтправка: {RuText.SendMode(d.SendMode)}\n" +
                          $"Планируемая отправка: {d.PlannedSendAt?.ToLocalTime():dd.MM.yyyy HH:mm}\n" +
-                         $"Получателей: {d.RecipientCount} (OK {d.SentCount}, FAIL {d.FailedCount})";
+                         $"Получателей: {d.RecipientCount} (отправлено {d.SentCount}, ошибок {d.FailedCount}, пропущено {d.SkippedCount})";
 
         if (d.Recipients.Count > 0)
         {
             var recs = string.Join("\n",
-                d.Recipients.Select(r => $"  • {r.Phone} — {r.Status}"));
+                d.Recipients.Select(r => $"  • {r.Phone} — {RuText.RecipientStatus(r.Status)}"
+                    + (string.IsNullOrEmpty(r.SkipReason) ? "" : $" ({r.SkipReason})")));
             message += $"\n\nПолучатели:\n{recs}";
         }
 

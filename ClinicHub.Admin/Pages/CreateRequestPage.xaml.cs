@@ -587,7 +587,7 @@ public partial class CreateRequestPage : ContentPage
         try
         {
             var created = await _api.PostAsync<SmsRequestOutDto>("/api/requests", dto);
-            await DisplayAlertAsync("Создано", $"Заявка #{created.Id} (статус: {created.Status})", "OK");
+            await DisplayAlertAsync("Создано", $"Заявка #{created.Id} (статус: {Services.RuText.RequestStatus(created.Status)})", "OK");
             await Navigation.PopModalAsync();
         }
         catch (Exception ex)

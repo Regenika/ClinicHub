@@ -168,7 +168,8 @@ public static class RequestsEndpoints
             // Без цели считаем рекламой: лучше не отправить, чем нарушить закон «О рекламе».
             Purpose = dto.Purpose ?? MessagePurpose.Marketing,
             Title = string.IsNullOrWhiteSpace(dto.Title)
-                ? $"SMS-заявка {now:dd.MM.yyyy HH:mm}"
+                // Время в названии — московское (видит человек), а хранится всё в UTC.
+                ? $"SMS-заявка {ClinicHub.Api.Modules.Shared.MoscowTime.ToMoscow(now):dd.MM.yyyy HH:mm}"
                 : dto.Title,
             Status = approveAutomatically ? RequestStatus.Approved : RequestStatus.Created,
             SendMode = dto.SendMode,

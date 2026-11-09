@@ -5,7 +5,11 @@ using ClinicHub.Core.Dtos;
 
 namespace ClinicHub.Admin.Services;
 
-/// <summary>HTTP-клиент API ClinicHub. Токен хранится в Preferences.</summary>
+/// <summary>
+/// HTTP-клиент API ClinicHub. Токены хранятся в Preferences.
+/// Токен доступа живёт час; на ответ 401 клиент один раз продлевает вход refresh-токеном
+/// (/api/auth/refresh) и повторяет запрос — иначе через час работы любое действие падало с 401.
+/// </summary>
 public class ApiClient
 {
     private const string TokenKey = "clinichub_access_token";
@@ -13,6 +17,7 @@ public class ApiClient
     private const string BaseUrlKey = "clinichub_base_url";
 
     private readonly HttpClient _http;
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private string _token = "";
 
     public ApiClient(HttpClient http)
@@ -42,31 +47,76 @@ public class ApiClient
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private async Task<T> SendAsync<T>(HttpRequestMessage msg, CancellationToken ct = default)
+    /// <summary>Запрос собирается фабрикой: после продления входа его нужно собрать заново с новым токеном.</summary>
+    private async Task<T> SendAsync<T>(Func<HttpRequestMessage> build, bool canRefresh, CancellationToken ct = default)
     {
-        using var resp = await _http.SendAsync(msg, ct);
-        var text = await resp.Content.ReadAsStringAsync(ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new ApiException((int)resp.StatusCode, text);
-        if (string.IsNullOrWhiteSpace(text))
-            return default!;
-        return JsonSerializer.Deserialize<T>(text, JsonOptions)!;
+        var tokenUsed = _token;
+        using (var msg = build())
+        using (var resp = await _http.SendAsync(msg, ct))
+        {
+            var text = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode)
+                return string.IsNullOrWhiteSpace(text) ? default! : JsonSerializer.Deserialize<T>(text, JsonOptions)!;
+            if (!(canRefresh && resp.StatusCode == System.Net.HttpStatusCode.Unauthorized && await TryRefreshAsync(tokenUsed, ct)))
+                throw new ApiException((int)resp.StatusCode, text);
+        }
+
+        using var retry = build();
+        using var retryResp = await _http.SendAsync(retry, ct);
+        var retryText = await retryResp.Content.ReadAsStringAsync(ct);
+        if (!retryResp.IsSuccessStatusCode)
+            throw new ApiException((int)retryResp.StatusCode, retryText);
+        return string.IsNullOrWhiteSpace(retryText) ? default! : JsonSerializer.Deserialize<T>(retryText, JsonOptions)!;
+    }
+
+    /// <summary>Продлить вход refresh-токеном. Несколько одновременных 401 продлевают один раз.</summary>
+    private async Task<bool> TryRefreshAsync(string expiredToken, CancellationToken ct)
+    {
+        await _refreshLock.WaitAsync(ct);
+        try
+        {
+            if (_token != expiredToken && !string.IsNullOrEmpty(_token))
+                return true; // уже продлил другой запрос
+            var refresh = Preferences.Default.Get(RefreshKey, "");
+            if (string.IsNullOrEmpty(refresh))
+                return false;
+            using var msg = new HttpRequestMessage(HttpMethod.Post, BaseUrl.TrimEnd('/') + "/api/auth/refresh")
+            {
+                Content = JsonContent.Create(new RefreshRequest(refresh), options: JsonOptions),
+            };
+            using var resp = await _http.SendAsync(msg, ct);
+            if (!resp.IsSuccessStatusCode)
+                return false; // refresh тоже истёк — нужен новый вход
+            var auth = await resp.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions, ct);
+            if (auth is null || string.IsNullOrEmpty(auth.AccessToken))
+                return false;
+            await SetTokenAsync(auth);
+            return true;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
 
     public Task<AuthResponse> LoginAsync(string login, string password, CancellationToken ct = default)
-        => SendAsync<AuthResponse>(Build("POST", "/api/auth/login", new { login, password }), ct);
+        => SendAsync<AuthResponse>(() => Build("POST", "/api/auth/login", new { login, password }), canRefresh: false, ct);
 
     public Task<T> GetAsync<T>(string path, CancellationToken ct = default)
-        => SendAsync<T>(Build("GET", path), ct);
+        => SendAsync<T>(() => Build("GET", path), canRefresh: true, ct);
 
     public Task<T> PostAsync<T>(string path, object body, CancellationToken ct = default)
-        => SendAsync<T>(Build("POST", path, body), ct);
+        => SendAsync<T>(() => Build("POST", path, body), canRefresh: true, ct);
 
     public Task<T> PutAsync<T>(string path, object body, CancellationToken ct = default)
-        => SendAsync<T>(Build("PUT", path, body), ct);
+        => SendAsync<T>(() => Build("PUT", path, body), canRefresh: true, ct);
 
     public Task<T> DeleteAsync<T>(string path, CancellationToken ct = default)
-        => SendAsync<T>(Build("DELETE", path), ct);
+        => SendAsync<T>(() => Build("DELETE", path), canRefresh: true, ct);
 
     public Task SetTokenAsync(AuthResponse auth)
     {
