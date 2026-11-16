@@ -159,6 +159,17 @@ if (Get-ChildItem $configDir -Force | Select-Object -First 1) {
     if ($LASTEXITCODE -ne 0) { Fail "Не удалось восстановить права на файлы в $configDir." }
 }
 
+# Ключ веб-панели рассылок (ADR-0012): %ProgramData%\ClinicHub\panel.key пишет сервер, читает сайт — оба LOCAL SERVICE.
+# Обычные пользователи Windows его не видят: с ключом можно отправлять SMS от имени панели.
+$panelDir = Join-Path $env:ProgramData "ClinicHub"
+New-Item -ItemType Directory -Force -Path $panelDir | Out-Null
+& icacls.exe $panelDir /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "${LocalServiceSid}:(OI)(CI)M" /C /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { Fail "Не удалось выдать права на папку $panelDir." }
+if (Test-Path (Join-Path $panelDir "panel.key")) {
+    & takeown.exe /F (Join-Path $panelDir "panel.key") /A | Out-Null
+    & icacls.exe (Join-Path $panelDir "panel.key") /reset /C /Q | Out-Null
+}
+
 # Источник для журнала событий Windows: создать его может только администратор, поэтому делает установщик.
 if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
     New-EventLog -LogName Application -Source $EventSource
