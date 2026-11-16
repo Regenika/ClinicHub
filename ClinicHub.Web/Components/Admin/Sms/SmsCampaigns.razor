@@ -1,0 +1,207 @@
+@page "/admin/sms/rassylki"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Core.Dtos
+@using ClinicHub.Core.Entities
+@inject MailingApi Api
+
+<PageTitle>Рассылки — SMS</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Рассылки</h1>
+        <a class="btn btn--primary" href="/admin/sms/rassylki/novaya">Новая рассылка</a>
+    </div>
+
+    <div class="m-actions" role="group" aria-label="Какие рассылки показать">
+        @foreach (var (key, label) in Tabs)
+        {
+            <button type="button" class="btn btn--sm @(tab == key ? "btn--primary" : "btn--outline")" aria-pressed="@(tab == key)" @onclick="() => tab = key">@label</button>
+        }
+    </div>
+
+    @if (message is not null)
+    {
+        <div class="notice" role="status">@message</div>
+    }
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+    @if (loading)
+    {
+        <p class="muted">Загружаю…</p>
+    }
+    else
+    {
+        @if (tab != "once")
+        {
+            @foreach (var s in scenarios)
+            {
+                <article class="card admin-head" style="align-items: flex-start">
+                    <div class="stack-sm" style="flex: 999 1 320px; min-width: 0">
+                        <div class="m-actions"><h2 class="h3">@s.Name</h2><span class="m-chip m-chip--auto">Автоматическая</span><span class="m-chip @(s.IsActive ? "m-chip--ok" : "")">@(s.IsActive ? "Включена" : "Выключена")</span></div>
+                        <div class="muted small">@ScenarioWhen(s) · @MailingText.Purpose(s.Purpose)</div>
+                        @if (s.Steps.FirstOrDefault() is { } step)
+                        {
+                            <div class="m-bubble" style="max-width: 560px">@step.Text.Replace("{name}", "Анна Смирнова")</div>
+                        }
+                    </div>
+                    <button type="button" class="m-switch @(s.IsActive ? "m-switch--on" : "")" aria-pressed="@s.IsActive"
+                            aria-label="@SwitchLabel(s.Name, s.IsActive)" disabled="@busy" @onclick="() => ToggleScenarioAsync(s)"></button>
+                </article>
+            }
+            @foreach (var r in rules)
+            {
+                <article class="card admin-head" style="align-items: flex-start">
+                    <div class="stack-sm" style="flex: 999 1 320px; min-width: 0">
+                        <div class="m-actions"><h2 class="h3">@r.Name</h2><span class="m-chip m-chip--auto">Автоматическая</span><span class="m-chip @(r.IsActive ? "m-chip--ok" : "")">@(r.IsActive ? "Включена" : "Выключена")</span></div>
+                        <div class="muted small">В день рождения в @Hm(r.SendTime) · @MailingText.Purpose(r.Purpose)</div>
+                        <div class="m-bubble" style="max-width: 560px">@r.TextTemplate.Replace("{name}", "Анна Смирнова")</div>
+                    </div>
+                    <button type="button" class="m-switch @(r.IsActive ? "m-switch--on" : "")" aria-pressed="@r.IsActive"
+                            aria-label="@SwitchLabel(r.Name, r.IsActive)" disabled="@busy" @onclick="() => ToggleRuleAsync(r)"></button>
+                </article>
+            }
+            @if (scenarios.Count == 0 && rules.Count == 0 && tab == "auto")
+            {
+                <p class="muted">Автоматических рассылок пока нет. Создайте: «Новая рассылка» → «Автоматически, по событию».</p>
+            }
+        }
+        @if (tab != "auto")
+        {
+            @foreach (var r in requests)
+            {
+                var (st, css) = MailingText.RequestStatus(r.Status);
+                var done = r.SentCount + r.FailedCount + r.SkippedCount;
+                var pct = r.RecipientCount == 0 ? 0 : done * 100 / r.RecipientCount;
+                <article class="card admin-head" style="align-items: flex-start">
+                    <div class="stack-sm" style="flex: 999 1 320px; min-width: 0">
+                        <div class="m-actions"><h2 class="h3">@r.Title</h2><span class="m-chip">Разовая</span><span class="m-chip @css">@st</span></div>
+                        <div class="muted small">
+                            @MailingText.When(r.CreatedAt) · @MailingText.Purpose(r.Purpose) ·
+                            @Progress(r)
+                        </div>
+                        @if (MailingText.IsRunning(r.Status) || r.Status == "Paused")
+                        {
+                            <div class="m-bar" style="max-width: 520px"><span style="width: @pct%"></span></div>
+                        }
+                    </div>
+                    <div class="m-actions">
+                        @if (MailingText.IsRunning(r.Status))
+                        {
+                            <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="() => PauseAsync(r)">Пауза</button>
+                        }
+                        @if (r.Status == "Paused")
+                        {
+                            <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="() => ResumeAsync(r)">Продолжить</button>
+                        }
+                        @if (MailingText.IsRunning(r.Status) || r.Status == "Paused")
+                        {
+                            <button type="button" class="btn btn--outline btn--sm" style="color: var(--danger)" disabled="@busy" @onclick="() => AskStop(r)">Остановить</button>
+                        }
+                        <a class="btn btn--outline btn--sm" href="@JournalLink(r)">Кому ушло</a>
+                    </div>
+                    @if (confirmStop == r.Id)
+                    {
+                        <div class="notice m-actions" role="alert" style="flex: 1 1 100%">
+                            <span style="flex: 1 1 260px">Остановить насовсем? Уже отправленное не вернуть, остальным не уйдёт.</span>
+                            <button type="button" class="btn btn--danger btn--sm" @onclick="() => StopAsync(r)">Остановить</button>
+                            <button type="button" class="btn btn--outline btn--sm" @onclick="() => confirmStop = null">Не надо</button>
+                        </div>
+                    }
+                </article>
+            }
+            @if (requests.Count == 0)
+            {
+                <p class="muted">Разовых рассылок ещё не было.</p>
+            }
+        }
+    }
+</section>
+
+@code {
+    private static readonly (string, string)[] Tabs = [("all", "Все"), ("once", "Разовые"), ("auto", "Автоматические")];
+    [SupplyParameterFromQuery(Name = "tab")] private string? TabQuery { get; set; }
+
+    private string tab = "all";
+    private List<SmsRequestOutDto> requests = new();
+    private List<ScenarioDto> scenarios = new();
+    private List<AutoRuleDto> rules = new();
+    private bool loading = true, busy;
+    private int? confirmStop;
+    private string? error, message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (TabQuery is "once" or "auto")
+            tab = TabQuery;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            requests = (await Api.RequestsAsync(100)).Where(r => r.Type == nameof(RequestType.Mass)).ToList();
+            scenarios = (await Api.ScenariosAsync()).Where(s => s.Trigger != "Manual").ToList();
+            rules = await Api.AutoRulesAsync();
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { loading = false; }
+    }
+
+    private static string ScenarioWhen(ScenarioDto s) => s.Trigger switch
+    {
+        "VisitCompleted" => $"После визита, через {s.Steps.FirstOrDefault()?.OffsetDays ?? 0} дн. в {s.Steps.FirstOrDefault()?.SendTime}"
+            + (s.TriggerServiceIds.Count > 0 ? $" · после услуг: {s.TriggerServiceIds.Count}" : ""),
+        "NoVisitFor" => $"Не был {s.NoVisitDays} дн. и нет новой записи",
+        "Birthday" => "В день рождения",
+        _ => s.Trigger,
+    };
+
+    private void AskStop(SmsRequestOutDto r) => confirmStop = r.Id;
+    private static string SwitchLabel(string name, bool on) => name + (on ? ": выключить" : ": включить");
+    private static string Hm(TimeSpan t) => t.ToString(@"hh\:mm");
+    private static string JournalLink(SmsRequestOutDto r) => "/admin/sms/zhurnal?request=" + r.Id;
+    private static string Progress(SmsRequestOutDto r) =>
+        $"отправлено {r.SentCount} из {r.RecipientCount}"
+        + (r.SkippedCount > 0 ? $", пропущено {r.SkippedCount}" : "")
+        + (r.FailedCount > 0 ? $", не ушло {r.FailedCount}" : "");
+    private Task PauseAsync(SmsRequestOutDto r) => RunAsync(() => Api.PauseAsync(r.Id), $"«{r.Title}» на паузе.");
+    private Task ResumeAsync(SmsRequestOutDto r) => RunAsync(() => Api.ResumeAsync(r.Id), $"«{r.Title}» продолжается.");
+    private Task StopAsync(SmsRequestOutDto r) => RunAsync(() => Api.CancelAsync(r.Id), $"«{r.Title}» остановлена.");
+
+    private async Task RunAsync(Func<Task> action, string ok)
+    {
+        busy = true;
+        error = message = null;
+        confirmStop = null;
+        try
+        {
+            await action();
+            message = ok;
+            await LoadAsync();
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private Task ToggleScenarioAsync(ScenarioDto s) => RunAsync(
+        () => Api.UpdateScenarioAsync(s.Id, new ScenarioInputDto(s.Name, s.Purpose, s.Trigger, s.Steps, s.TriggerServiceIds, s.NoVisitDays, !s.IsActive)),
+        s.IsActive ? $"«{s.Name}» выключена." : $"«{s.Name}» включена.");
+
+    private Task ToggleRuleAsync(AutoRuleDto r) => RunAsync(
+        () => Api.UpdateAutoRuleAsync(r.Id, new AutoRuleInputDto
+        {
+            Name = r.Name,
+            Trigger = Enum.Parse<AutoRuleTrigger>(r.Trigger),
+            Purpose = Enum.Parse<MessagePurpose>(r.Purpose),
+            TextTemplate = r.TextTemplate,
+            DaysOffset = r.DaysOffset,
+            SendTime = r.SendTime,
+            IsActive = !r.IsActive,
+        }),
+        r.IsActive ? $"«{r.Name}» выключена." : $"«{r.Name}» включена.");
+}

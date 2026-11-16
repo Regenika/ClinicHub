@@ -1,0 +1,231 @@
+@page "/admin/sms/pacienty"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Core
+@using ClinicHub.Core.Dtos
+@inject MailingApi Api
+
+<PageTitle>Пациенты — SMS</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Пациенты</h1>
+        <button type="button" class="btn btn--outline" @onclick="StartNew">Добавить пациента</button>
+    </div>
+
+    @if (message is not null)
+    {
+        <div class="notice" role="status">@message</div>
+    }
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+
+    @if (draft is not null)
+    {
+        <div class="card stack">
+            <h2 class="h3">Новый пациент</h2>
+            <div class="admin-form__row">
+                <div class="field"><label for="p-name">ФИО</label><input id="p-name" type="text" @bind="draft.FullName" /></div>
+                <div class="field"><label for="p-phone">Телефон</label><input id="p-phone" type="tel" placeholder="+7 999 123-45-67" @bind="draft.Phone" /></div>
+                <div class="field"><label for="p-dob">Дата рождения</label><input id="p-dob" type="date" @bind="draft.DateOfBirth" /></div>
+            </div>
+            <div class="m-actions">
+                <button type="button" class="btn btn--primary" disabled="@busy" @onclick="CreateAsync">Сохранить</button>
+                <button type="button" class="btn btn--outline" @onclick="() => draft = null">Отмена</button>
+            </div>
+        </div>
+    }
+
+    <div class="m-split">
+        <div class="card stack m-split__main">
+            <input type="search" placeholder="Имя или телефон" aria-label="Найти пациента" value="@query" @oninput="SearchAsync" />
+            @if (list.Count == 0 && !loading)
+            {
+                <p class="muted">Никого не нашли.</p>
+            }
+            <ul class="m-list">
+                @foreach (var p in list)
+                {
+                    <li>
+                        <button type="button" class="m-list__row @(selected?.Id == p.Id ? "m-list__row--on" : "")" @onclick="() => OpenAsync(p)">
+                            <span style="flex: 1"><b>@p.FullName</b></span>
+                            <span class="muted small">@p.Phone</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        </div>
+
+        <aside class="card stack m-split__side" aria-label="Карточка пациента">
+            @if (selected is null)
+            {
+                <p class="muted">Выберите пациента слева.</p>
+            }
+            else
+            {
+                <div>
+                    <h2 class="h3">@selected.FullName</h2>
+                    <div class="muted small">@selected.Phone@(selected.DateOfBirth is { } dob ? " · д. р. " + dob.ToString("dd.MM.yyyy") : "")</div>
+                    <div class="muted small">Последний визит: @(selected.LastVisitAt is { } lv ? MailingText.Day(lv) : "нет данных")</div>
+                </div>
+                <a class="btn btn--primary btn--sm" href="@WriteLink">Написать</a>
+
+                @if (consents is not null)
+                {
+                    <div class="stack-sm">
+                        <div class="m-cons">
+                            <span style="flex: 1 1 200px"><b>Обработка персональных данных</b><br /><span class="muted small">152-ФЗ. Без него не пишем вообще — даже о записи.</span></span>
+                            <span class="m-chip @(Pd?.CanSend == true ? "m-chip--ok" : "m-chip--bad")">@(Pd?.CanSend == true ? "есть" : "нет")</span>
+                        </div>
+                        <div class="m-cons">
+                            <span style="flex: 1 1 200px"><b>Реклама и акции</b><br /><span class="muted small">38-ФЗ ст. 18 — отдельное согласие. Без него — только сообщения по записи.</span></span>
+                            <span class="m-chip @(Ads?.CanSend == true ? "m-chip--ok" : "")">@(Ads?.CanSend == true ? "есть" : "нет")</span>
+                        </div>
+                        @if (!consents.IsSubscribed)
+                        {
+                            <div class="notice" role="note">Пациент ответил «СТОП» — сообщения ему не уходят.</div>
+                        }
+                    </div>
+
+                    <fieldset class="field">
+                        <legend>Отметить согласие</legend>
+                        <div class="m-actions">
+                            <select aria-label="Какое согласие" @bind="markPurpose" style="max-width: 220px">
+                                <option value="Service">Обработка данных</option>
+                                <option value="Marketing">Реклама и акции</option>
+                            </select>
+                            <select aria-label="Откуда" @bind="markSource" style="max-width: 200px">
+                                <option value="PaperForm">Бумажная анкета</option>
+                                <option value="Verbal">Сказал устно</option>
+                            </select>
+                            <input type="text" aria-label="Номер анкеты" placeholder="№ анкеты" @bind="markRef" style="max-width: 140px" />
+                        </div>
+                        <div class="m-actions">
+                            <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="() => MarkAsync(true)">Дал согласие</button>
+                            <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="() => MarkAsync(false)">Отозвал</button>
+                        </div>
+                    </fieldset>
+
+                    @if (consents.Journal.Count > 0)
+                    {
+                        <details>
+                            <summary class="small">История согласий (@consents.Journal.Count)</summary>
+                            <ul class="small" style="padding-left: 18px; line-height: 1.7">
+                                @foreach (var j in consents.Journal.OrderByDescending(j => j.At))
+                                {
+                                    <li>@MailingText.Day(j.At): @(j.Purpose == "Marketing" ? "реклама" : "обработка данных") — @(j.Granted ? "дал" : "отозвал") (@Source(j.Source)@(j.ByLogin is null ? "" : ", " + j.ByLogin))</li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                }
+                <a class="small" href="@LogLink">Что ему отправляли</a>
+            }
+        </aside>
+    </div>
+</section>
+
+@code {
+    private List<PatientDto> list = new();
+    private PatientDto? selected;
+    private PatientConsentsDto? consents;
+    private PatientInputDto? draft;
+    private string query = "", markPurpose = "Marketing", markSource = "PaperForm";
+    private string? markRef, error, message;
+    private bool loading = true, busy;
+    private CancellationTokenSource? cts;
+
+    private ConsentStateDto? Pd => consents?.Current.FirstOrDefault(c => c.Purpose == "Service" && c.Channel == "Sms");
+    private ConsentStateDto? Ads => consents?.Current.FirstOrDefault(c => c.Purpose == "Marketing" && c.Channel == "Sms");
+    private string WriteLink => "/admin/sms/napisat?patient=" + selected?.Id;
+    private string LogLink => "/admin/sms/zhurnal?patient=" + selected?.Id;
+
+    private static string Source(string s) => s switch
+    {
+        "PaperForm" => "анкета",
+        "Verbal" => "устно",
+        "Site" => "сайт",
+        "Bot" => "бот",
+        "Stop" or "SmsStop" => "ответ СТОП",
+        _ => s,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { list = await Api.PatientsAsync(null, 30); }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { loading = false; }
+    }
+
+    private async Task SearchAsync(ChangeEventArgs e)
+    {
+        query = e.Value?.ToString() ?? "";
+        cts?.Cancel();
+        var my = cts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(250, my.Token);
+            list = await Api.PatientsAsync(query, 30);
+        }
+        catch (TaskCanceledException) { }
+        catch (MailingApiException ex) { error = ex.Message; }
+    }
+
+    private async Task OpenAsync(PatientDto p)
+    {
+        selected = p;
+        consents = null;
+        error = message = null;
+        try { consents = await Api.ConsentsAsync(p.Id); }
+        catch (MailingApiException ex) { error = ex.Message; }
+    }
+
+    private async Task MarkAsync(bool granted)
+    {
+        if (selected is null)
+            return;
+        busy = true;
+        error = message = null;
+        try
+        {
+            await Api.AddConsentAsync(selected.Id, new ConsentInputDto(markPurpose, "Sms", granted, markSource,
+                string.IsNullOrWhiteSpace(markRef) ? null : markRef.Trim()));
+            message = granted ? "Согласие отмечено." : "Отзыв согласия отмечен.";
+            markRef = null;
+            consents = await Api.ConsentsAsync(selected.Id);
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private void StartNew()
+    {
+        draft = new PatientInputDto { IsSubscribed = true };
+        error = message = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (draft is null)
+            return;
+        error = null;
+        if (string.IsNullOrWhiteSpace(draft.FullName)) { error = "Укажите ФИО."; return; }
+        if (!PhoneNumbers.TryNormalizeRuMobile(draft.Phone, out var e164)) { error = "Телефон нужен мобильный российский, например +7 999 123-45-67."; return; }
+        draft.Phone = e164;
+        draft.FullName = draft.FullName.Trim();
+        busy = true;
+        try
+        {
+            var created = await Api.CreatePatientAsync(draft);
+            draft = null;
+            message = $"{created.FullName} добавлен(а). Отметьте согласия по анкете.";
+            list.Insert(0, created);
+            await OpenAsync(created);
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

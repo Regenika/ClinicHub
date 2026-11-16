@@ -1,0 +1,156 @@
+@page "/admin/sms/shablony"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Core.Dtos
+@inject MailingApi Api
+
+<PageTitle>Шаблоны — SMS</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Шаблоны сообщений</h1>
+        <button type="button" class="btn btn--primary" @onclick="New">Новый шаблон</button>
+    </div>
+    <p class="muted">Готовые тексты для «Написать пациенту» и рассылок. «{Имя}» заменится на имя пациента.</p>
+
+    @if (message is not null)
+    {
+        <div class="notice" role="status">@message</div>
+    }
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+
+    @if (editing is not null)
+    {
+        <div class="card stack">
+            <h2 class="h3">@(editingId is null ? "Новый шаблон" : "Правка шаблона")</h2>
+            <div class="field"><label for="t-name">Название</label><input id="t-name" type="text" @bind="editing.Name" /></div>
+            <div class="field">
+                <label for="t-text">Текст</label>
+                <textarea id="t-text" rows="5" @bind="editing.Text" @bind:event="oninput"></textarea>
+                <span class="muted small">@MailingText.Counter(MailingText.Preview(editing.Text, "Анна Смирнова", false))</span>
+            </div>
+            <label class="m-actions"><input type="checkbox" @bind="editing.IsActive" /> Показывать в списке шаблонов</label>
+            <div class="m-actions">
+                <button type="button" class="btn btn--primary" disabled="@busy" @onclick="SaveAsync">Сохранить</button>
+                <button type="button" class="btn btn--outline" @onclick="() => editing = null">Отмена</button>
+            </div>
+        </div>
+    }
+
+    <input type="search" placeholder="Найти шаблон" aria-label="Найти шаблон" @bind="search" @bind:event="oninput" style="max-width: 320px" />
+
+    @if (loading)
+    {
+        <p class="muted">Загружаю…</p>
+    }
+    else
+    {
+        @foreach (var t in Visible)
+        {
+            <article class="card admin-head" style="align-items: flex-start">
+                <div class="stack-sm" style="flex: 999 1 320px; min-width: 0">
+                    <div class="m-actions"><h2 class="h3">@t.Name</h2>@if (!t.IsActive){<span class="m-chip">скрыт</span>}</div>
+                    <div class="m-bubble" style="max-width: 560px">@MailingText.Preview(t.Text, "Анна Смирнова", false)</div>
+                </div>
+                <div class="m-actions">
+                    <button type="button" class="btn btn--outline btn--sm" @onclick="() => Edit(t)">Изменить</button>
+                    @if (confirmDelete == t.Id)
+                    {
+                        <button type="button" class="btn btn--danger btn--sm" disabled="@busy" @onclick="() => DeleteAsync(t)">Точно удалить</button>
+                        <button type="button" class="btn btn--outline btn--sm" @onclick="() => confirmDelete = null">Не надо</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn--outline btn--sm" style="color: var(--danger)" @onclick="() => confirmDelete = t.Id">Удалить</button>
+                    }
+                </div>
+            </article>
+        }
+        @if (Visible.Count == 0)
+        {
+            <p class="muted">Шаблонов не нашлось.</p>
+        }
+    }
+</section>
+
+@code {
+    private List<MessageTemplateDto> templates = new();
+    private MessageTemplateInputDto? editing;
+    private int? editingId, confirmDelete;
+    private bool loading = true, busy;
+    private string search = "";
+    private string? error, message;
+
+    private List<MessageTemplateDto> Visible => templates
+        .Where(t => string.IsNullOrWhiteSpace(search)
+                    || t.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || t.Text.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(t => t.IsActive).ThenBy(t => t.Name).ToList();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try { templates = await Api.TemplatesAsync(); }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { loading = false; }
+    }
+
+    private void New()
+    {
+        editingId = null;
+        editing = new MessageTemplateInputDto { IsActive = true };
+    }
+
+    private void Edit(MessageTemplateDto t)
+    {
+        editingId = t.Id;
+        editing = new MessageTemplateInputDto { Name = t.Name, Text = t.Text, IsActive = t.IsActive };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (editing is null)
+            return;
+        error = message = null;
+        if (string.IsNullOrWhiteSpace(editing.Name) || string.IsNullOrWhiteSpace(editing.Text))
+        {
+            error = "Нужны название и текст.";
+            return;
+        }
+        busy = true;
+        try
+        {
+            editing.Name = editing.Name.Trim();
+            editing.Text = editing.Text.Trim();
+            if (editingId is int id)
+                await Api.UpdateTemplateAsync(id, editing);
+            else
+                await Api.CreateTemplateAsync(editing);
+            message = $"Шаблон «{editing.Name}» сохранён.";
+            editing = null;
+            await LoadAsync();
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task DeleteAsync(MessageTemplateDto t)
+    {
+        busy = true;
+        error = message = null;
+        try
+        {
+            await Api.DeleteTemplateAsync(t.Id);
+            message = $"Шаблон «{t.Name}» удалён.";
+            confirmDelete = null;
+            await LoadAsync();
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

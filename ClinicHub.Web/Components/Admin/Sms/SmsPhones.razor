@@ -1,0 +1,142 @@
+@page "/admin/sms/telefony"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Core.Dtos
+@inject MailingApi Api
+
+<PageTitle>Телефоны — SMS</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Телефоны для SMS</h1>
+        <button type="button" class="btn btn--primary" @onclick="() => showHelp = !showHelp">Добавить новый телефон</button>
+    </div>
+
+    @if (showHelp)
+    {
+        <div class="card card--soft stack-sm">
+            <h2 class="h3">Как добавить телефон</h2>
+            <ol style="margin: 0; padding-left: 20px; line-height: 1.8">
+                <li>Установите на Android-телефон приложение «ClinicHub SMS» (файл APK — у администратора).</li>
+                <li>Подключите телефон к Wi-Fi клиники, откройте приложение и разрешите отправку SMS.</li>
+                <li>В приложении введите адрес сервера клиники и нажмите «Подключить».</li>
+                <li>Телефон и его SIM-карты появятся здесь сами в течение минуты. Затем впишите баланс SIM.</li>
+            </ol>
+            <p class="muted small" style="margin: 0">Телефон должен быть на зарядке и не уходить в режим экономии — иначе SMS будут ждать в очереди.</p>
+        </div>
+    }
+
+    @if (message is not null)
+    {
+        <div class="notice" role="status">@message</div>
+    }
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+
+    @if (loading)
+    {
+        <p class="muted">Загружаю…</p>
+    }
+    else if (phones.Count == 0)
+    {
+        <p class="muted">Телефонов пока нет. Нажмите «Добавить новый телефон».</p>
+    }
+    else
+    {
+        @foreach (var p in phones)
+        {
+            <article class="card stack">
+                <div class="admin-head">
+                    <div class="m-actions">
+                        <h2 class="h3">@p.PhoneNumber</h2>
+                        @if (!p.IsActive)
+                        {
+                            <span class="m-chip">Выключен</span>
+                        }
+                        else if (p.IsOnline)
+                        {
+                            <span class="m-chip m-chip--ok">На связи</span>
+                        }
+                        else
+                        {
+                            <span class="m-chip m-chip--bad">Не на связи</span>
+                        }
+                        <span class="muted small">@LastSeen(p)</span>
+                    </div>
+                    <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="() => ToggleAsync(p)">@(p.IsActive ? "Не отправлять с него" : "Отправлять с него")</button>
+                </div>
+                @if (p.SimCards.Count == 0)
+                {
+                    <p class="muted small">SIM-карт телефон ещё не сообщил.</p>
+                }
+                @foreach (var s in p.SimCards)
+                {
+                    <div class="m-cons">
+                        <span style="flex: 1 1 200px"><b>@s.Number</b> <span class="muted small">@s.Operator</span></span>
+                        <span class="muted small">до @s.LimitPerMinute в минуту, @s.LimitPerDay в день</span>
+                        @if (balanceSim == s.Id)
+                        {
+                            <input type="number" min="0" aria-label="Баланс, рублей" @bind="balance" style="max-width: 120px" />
+                            <button type="button" class="btn btn--primary btn--sm" disabled="@busy" @onclick="() => SaveBalanceAsync(s)">Сохранить</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn--outline btn--sm" @onclick="() => EditBalance(s)">Баланс: @s.Balance ₽</button>
+                        }
+                    </div>
+                }
+            </article>
+        }
+    }
+</section>
+
+@code {
+    private List<PhoneDto> phones = new();
+    private bool loading = true, busy, showHelp;
+    private int? balanceSim;
+    private int balance;
+    private string? error, message;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try { phones = await Api.PhonesAsync(); }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { loading = false; }
+    }
+
+    private static string LastSeen(PhoneDto p) => p.LastSeenAt is { } at ? "был на связи " + MailingText.When(at) : "ещё не подключался";
+
+    private void EditBalance(SimCardDto s)
+    {
+        balanceSim = s.Id;
+        balance = s.Balance;
+    }
+
+    private async Task ToggleAsync(PhoneDto p) => await RunAsync(() => Api.SetPhoneActiveAsync(p.Id, !p.IsActive),
+        p.IsActive ? $"С {p.PhoneNumber} больше не отправляем." : $"{p.PhoneNumber} снова отправляет.");
+
+    private async Task SaveBalanceAsync(SimCardDto s) => await RunAsync(async () =>
+    {
+        await Api.SetBalanceAsync(s.Id, Math.Max(0, balance));
+        balanceSim = null;
+    }, $"Баланс SIM {s.Number} сохранён.");
+
+    private async Task RunAsync(Func<Task> action, string ok)
+    {
+        busy = true;
+        error = message = null;
+        try
+        {
+            await action();
+            message = ok;
+            await LoadAsync();
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

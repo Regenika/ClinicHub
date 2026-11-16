@@ -1,0 +1,189 @@
+@page "/admin/sms/napisat"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Core.Dtos
+@using ClinicHub.Core.Entities
+@inject MailingApi Api
+
+<PageTitle>Написать пациенту — SMS</PageTitle>
+
+<section class="stack-lg">
+    <h1 class="h2">Написать пациенту</h1>
+
+    @if (done is not null)
+    {
+        <div class="notice" role="status">@done <a href="/admin/sms/zhurnal">Журнал отправки</a></div>
+    }
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+
+    <div class="m-split">
+        <div class="card stack m-split__main">
+            <div class="field">
+                <label for="w-q">Кому</label>
+                @if (patient is not null)
+                {
+                    <div class="m-cons" style="background: #F2F8F5">
+                        <span style="flex: 1"><b>@patient.FullName</b> · @patient.Phone</span>
+                        <button type="button" class="btn btn--outline btn--sm" @onclick="ClearPatient">Другой</button>
+                    </div>
+                }
+                else
+                {
+                    <input id="w-q" type="search" placeholder="Имя или телефон" autocomplete="off" value="@query" @oninput="SearchAsync" />
+                    @if (found.Count > 0)
+                    {
+                        <ul class="m-list">
+                            @foreach (var p in found)
+                            {
+                                <li><button type="button" class="m-list__row" @onclick="() => PickAsync(p)"><span style="flex: 1"><b>@p.FullName</b></span><span class="muted small">@p.Phone</span></button></li>
+                            }
+                        </ul>
+                    }
+                    else if (query.Length >= 2 && !searching)
+                    {
+                        <span class="muted small">Никого не нашли. Пациенты появляются из Dikidi, с сайта или добавляются в разделе «Пациенты».</span>
+                    }
+                }
+            </div>
+
+            <TemplatePicker Templates="templates" @bind-Text="text" @bind-SelectedId="templateId" Marketing="marketing" IdPrefix="w" Notify="@((string n) => done = n)" />
+
+            <fieldset class="field">
+                <legend>Что это за сообщение</legend>
+                <div class="m-choices">
+                    <button type="button" class="m-choice @(marketing ? "" : "m-choice--on")" aria-pressed="@(!marketing)" @onclick="() => marketing = false">
+                        <span><b>По записи или лечению</b><br /><span class="muted small">Перенос, напоминание, анализы готовы. Хватает согласия на обработку данных.</span></span>
+                    </button>
+                    <button type="button" class="m-choice @(marketing ? "m-choice--on" : "")" aria-pressed="@marketing" @onclick="() => marketing = true">
+                        <span><b>Реклама или акция</b><br /><span class="muted small">Только тем, кто согласился получать рекламу. В конце добавим «Отказ: СТОП».</span></span>
+                    </button>
+                </div>
+            </fieldset>
+
+            @if (Warning is { } w)
+            {
+                <div class="notice" role="note">@w</div>
+            }
+
+            <div class="m-actions">
+                <button type="button" class="btn btn--primary" disabled="@busy" @onclick="SendAsync">Отправить</button>
+                <span class="muted small">Уйдёт в течение минуты. После 20:00 — утром в 9:00.</span>
+            </div>
+        </div>
+
+        <aside class="card card--soft stack-sm m-split__side" aria-label="Как увидит пациент">
+            <div class="muted small">Так увидит пациент</div>
+            <div class="m-bubble">@(string.IsNullOrWhiteSpace(text) ? "Здесь появится текст" : MailingText.Preview(text, patient?.FullName ?? "Анна Смирнова", marketing))</div>
+            <div class="muted small">@MailingText.Counter(MailingText.Preview(text, patient?.FullName ?? "Анна Смирнова", marketing))</div>
+        </aside>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "patient")] private int? PatientId { get; set; }
+
+    private List<MessageTemplateDto> templates = new();
+    private List<PatientDto> found = new();
+    private PatientDto? patient;
+    private PatientConsentsDto? consents;
+    private string query = "", text = "", templateId = "";
+    private bool marketing, busy, searching;
+    private string? error, done;
+    private CancellationTokenSource? searchCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            templates = (await Api.TemplatesAsync()).Where(t => t.IsActive).OrderBy(t => t.Name).ToList();
+            if (PatientId is int id)
+                await PickAsync(await Api.PatientAsync(id));
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+    }
+
+    private string? Warning
+    {
+        get
+        {
+            if (consents is null)
+                return null;
+            var sms = consents.Current.Where(c => c.Channel == "Sms").ToList();
+            var need = sms.FirstOrDefault(c => c.Purpose == (marketing ? "Marketing" : "Service"));
+            if (need is null || need.CanSend)
+                return null;
+            return marketing
+                ? $"Рекламное сообщение этому пациенту не уйдёт: {need.Reason}. Если согласие есть на бумаге, отметьте его в карточке пациента."
+                : $"Сообщение не уйдёт: {need.Reason}.";
+        }
+    }
+
+    private async Task SearchAsync(ChangeEventArgs e)
+    {
+        query = e.Value?.ToString() ?? "";
+        searchCts?.Cancel();
+        if (query.Trim().Length < 2)
+        {
+            found.Clear();
+            return;
+        }
+        var cts = searchCts = new CancellationTokenSource();
+        searching = true;
+        try
+        {
+            await Task.Delay(250, cts.Token);
+            found = await Api.PatientsAsync(query, 8);
+        }
+        catch (TaskCanceledException) { }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { if (!cts.IsCancellationRequested) searching = false; }
+    }
+
+    private async Task PickAsync(PatientDto p)
+    {
+        patient = p;
+        found.Clear();
+        query = "";
+        try { consents = await Api.ConsentsAsync(p.Id); }
+        catch (MailingApiException) { consents = null; }
+    }
+
+    private void ClearPatient()
+    {
+        patient = null;
+        consents = null;
+    }
+
+    private async Task SendAsync()
+    {
+        error = null;
+        done = null;
+        if (patient is null) { error = "Выберите, кому отправить."; return; }
+        if (string.IsNullOrWhiteSpace(text)) { error = "Выберите шаблон или напишите текст."; return; }
+
+        busy = true;
+        try
+        {
+            await Api.CreateRequestAsync(new CreateSmsRequestDto
+            {
+                Type = RequestType.Personal,
+                Purpose = marketing ? MessagePurpose.Marketing : MessagePurpose.Service,
+                Title = $"Сообщение: {patient.FullName}",
+                SendMode = SendMode.Now,
+                TextTemplate = MailingText.ForSend(text, marketing),
+                Recipients = [new RecipientInputDto { PatientId = patient.Id }],
+            });
+            done = $"Сообщение для {patient.FullName} поставлено в очередь.";
+            text = "";
+            templateId = "";
+            patient = null;
+            consents = null;
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

@@ -1,0 +1,132 @@
+@page "/admin/sms"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Core.Dtos
+@inject MailingApi Api
+
+<PageTitle>SMS — главная</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <div>
+            <p class="muted small" style="margin: 0 0 4px">@Today</p>
+            <h1 class="h2">SMS-рассылки</h1>
+        </div>
+        <div class="m-actions">
+            <a class="btn btn--primary" href="/admin/sms/napisat">Написать пациенту</a>
+            <a class="btn btn--outline" href="/admin/sms/rassylki/novaya">Новая рассылка</a>
+        </div>
+    </div>
+
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+    else if (summary is null)
+    {
+        <p class="muted">Загружаю…</p>
+    }
+    else
+    {
+        <div class="m-grid">
+            <div class="card m-tile">
+                <div class="muted small">Телефоны для SMS</div>
+                <div class="m-tile__value">@summary.PhonesOnline из @summary.PhonesTotal на связи</div>
+                @if (summary.PhonesTotal == 0)
+                {
+                    <a class="small" href="/admin/sms/telefony">Подключить телефон</a>
+                }
+                else if (summary.PhonesOnline < summary.PhonesTotal)
+                {
+                    <a class="small" href="/admin/sms/telefony">Какой не на связи?</a>
+                }
+            </div>
+            <div class="card m-tile">
+                <div class="muted small">Отправлено сегодня</div>
+                <div class="m-tile__value">@summary.SmsSentToday SMS</div>
+                <div class="muted small">в очереди: @summary.SmsInQueue</div>
+            </div>
+            <div class="card m-tile">
+                <div class="muted small">Не ушло сегодня</div>
+                <div class="m-tile__value">@summary.SmsFailedToday</div>
+                @if (summary.SmsFailedToday > 0)
+                {
+                    <a class="small" href="/admin/sms/zhurnal?status=Failed">Посмотреть, почему</a>
+                }
+            </div>
+            <div class="card m-tile">
+                <div class="muted small">Время отправки</div>
+                <div class="m-tile__value">9:00–20:00</div>
+                <div class="muted small">ночью сообщения ждут утра</div>
+            </div>
+        </div>
+
+        <div class="m-grid m-grid--wide">
+            <section class="card stack" aria-labelledby="h-run">
+                <h2 id="h-run" class="h3">Сейчас идут</h2>
+                @if (running.Count == 0)
+                {
+                    <p class="muted">Рассылок в работе нет.</p>
+                }
+                @foreach (var r in running)
+                {
+                    var done = r.SentCount + r.FailedCount + r.SkippedCount;
+                    var pct = r.RecipientCount == 0 ? 0 : done * 100 / r.RecipientCount;
+                    <div class="stack-sm">
+                        <div class="admin-head"><b>@r.Title</b><span class="muted small">@done из @r.RecipientCount</span></div>
+                        <div class="m-bar"><span style="width: @pct%"></span></div>
+                    </div>
+                }
+                <div><a class="btn btn--outline btn--sm" href="/admin/sms/rassylki">Все рассылки</a></div>
+            </section>
+            <section class="card stack" aria-labelledby="h-att">
+                <h2 id="h-att" class="h3">Требует внимания</h2>
+                @if (attention.Count == 0)
+                {
+                    <p class="muted">Всё в порядке.</p>
+                }
+                else
+                {
+                    <ul class="stack-sm" style="margin: 0; padding-left: 18px">
+                        @foreach (var a in attention)
+                        {
+                            <li>@a</li>
+                        }
+                    </ul>
+                }
+            </section>
+        </div>
+    }
+</section>
+
+@code {
+    private DashboardSummaryDto? summary;
+    private List<SmsRequestOutDto> running = new();
+    private List<string> attention = new();
+    private string? error;
+
+    private static string Today => ClinicHub.Web.Booking.ClinicTime.ToLocal(DateTimeOffset.UtcNow)
+        .ToString("dddd, d MMMM · HH:mm", ClinicHub.Web.Booking.ClinicTime.Ru);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            summary = await Api.DashboardAsync();
+            var requests = await Api.RequestsAsync(50);
+            running = requests.Where(r => MailingText.IsRunning(r.Status) || r.Status == "Paused").Take(5).ToList();
+
+            if (summary.PhonesTotal > 0 && summary.PhonesOnline == 0)
+                attention.Add("Ни один телефон не на связи — SMS ждут в очереди. Проверьте Wi-Fi и зарядку телефона.");
+            foreach (var p in requests.Where(r => r.Status == "Paused"))
+                attention.Add($"Рассылка «{p.Title}» на паузе.");
+            if (summary.SimBalances.FirstOrDefault(s => s.IsActive && s.Balance is > 0 and < 100) is { } low)
+                attention.Add($"На SIM {low.Number} баланс {low.Balance} ₽ — пора пополнить.");
+        }
+        catch (MailingApiException ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

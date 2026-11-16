@@ -1,0 +1,123 @@
+@page "/admin/sms/zhurnal"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using ClinicHub.Core.Dtos
+@inject MailingApi Api
+
+<PageTitle>Журнал — SMS</PageTitle>
+
+<section class="stack-lg">
+    <div class="admin-head">
+        <h1 class="h2">Журнал отправки</h1>
+        <button type="button" class="btn btn--outline btn--sm" disabled="@loading" @onclick="LoadAsync">Обновить</button>
+    </div>
+
+    @if (RequestFilter is int rid)
+    {
+        <div class="notice m-actions" role="status">
+            <span style="flex: 1 1 260px">Показана одна рассылка: «@(rows.FirstOrDefault()?.RequestTitle ?? "№" + rid)».</span>
+            <a class="btn btn--outline btn--sm" href="/admin/sms/zhurnal">Показать все</a>
+        </div>
+    }
+
+    <div class="m-actions" role="group" aria-label="Фильтр по статусу">
+        @foreach (var (key, label) in Filters)
+        {
+            <button type="button" class="btn btn--sm @(status == key ? "btn--primary" : "btn--outline")" aria-pressed="@(status == key)" @onclick="() => SetStatusAsync(key)">@label</button>
+        }
+        <input type="search" placeholder="Имя или телефон" aria-label="Найти в журнале" @bind="search" @bind:event="oninput" style="max-width: 260px" />
+    </div>
+
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+    @if (loading)
+    {
+        <p class="muted">Загружаю…</p>
+    }
+    else if (Visible.Count == 0)
+    {
+        <p class="muted">Здесь пока пусто.</p>
+    }
+    else
+    {
+        <ul class="m-list">
+            @foreach (var r in Visible)
+            {
+                var (st, css) = MailingText.RecipientStatus(r.Status);
+                <li class="m-log">
+                    <div class="m-log__who">
+                        <b>@(r.PatientName ?? "Без карточки")</b>
+                        <div class="muted small">@r.Phone</div>
+                    </div>
+                    <div class="m-log__what">
+                        <div class="small">@r.RequestTitle · @MailingText.Purpose(r.Purpose)</div>
+                        <div class="muted small m-log__text">@r.MessageText</div>
+                        @if (Why(r) is { } why)
+                        {
+                            <div class="small" style="color: var(--danger)">@why</div>
+                        }
+                    </div>
+                    <div class="m-log__when">
+                        <span class="m-chip @css">@st</span>
+                        <div class="muted small">@MailingText.When(r.SentAt ?? r.SendAfter ?? r.CreatedAt)</div>
+                    </div>
+                </li>
+            }
+        </ul>
+        @if (rows.Count >= Take)
+        {
+            <p class="muted small">Показаны последние @Take записей.</p>
+        }
+    }
+</section>
+
+@code {
+    private const int Take = 300;
+    private static readonly (string?, string)[] Filters =
+        [(null, "Все"), ("Sent", "Отправлено"), ("Pending", "Ждут"), ("Failed", "Не ушло"), ("Skipped", "Пропущено")];
+
+    [SupplyParameterFromQuery(Name = "status")] private string? StatusQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "request")] private int? RequestFilter { get; set; }
+    [SupplyParameterFromQuery(Name = "patient")] private int? PatientFilter { get; set; }
+
+    private string? status, error;
+    private string search = "";
+    private bool loading = true;
+    private List<RecipientLogDto> rows = new();
+
+    private List<RecipientLogDto> Visible => string.IsNullOrWhiteSpace(search)
+        ? rows
+        : rows.Where(r => (r.PatientName ?? "").Contains(search.Trim(), StringComparison.OrdinalIgnoreCase)
+                          || r.Phone.Contains(search.Trim().Replace(" ", ""), StringComparison.Ordinal)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        status = StatusQuery;
+        await LoadAsync();
+    }
+
+    private async Task SetStatusAsync(string? s)
+    {
+        status = s;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        error = null;
+        try { rows = await Api.LogAsync(status, PatientFilter, RequestFilter, Take); }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { loading = false; }
+    }
+
+    private static string? Why(RecipientLogDto r) => r.Status switch
+    {
+        "Skipped" => r.SkipReason ?? "пропущено",
+        "Failed" => r.LastError ?? "телефон не смог отправить",
+        _ => null,
+    };
+}
