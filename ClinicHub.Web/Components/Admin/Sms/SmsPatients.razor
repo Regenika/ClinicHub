@@ -12,11 +12,16 @@
     <div class="admin-head">
         <h1 class="h2">Пациенты</h1>
         <div class="m-actions">
-            <button type="button" class="btn btn--primary" @onclick="() => importing = !importing">Загрузить из Dikidi</button>
+            <button type="button" class="btn btn--primary" @onclick="() => history = !history">Подтянуть из Dikidi</button>
+            <button type="button" class="btn btn--outline" @onclick="() => importing = !importing">Загрузить файл</button>
             <button type="button" class="btn btn--outline" @onclick="StartNew">Добавить пациента</button>
         </div>
     </div>
 
+    @if (history)
+    {
+        <DikidiHistory OnClose="() => history = false" OnImported="ReloadAsync" />
+    }
     @if (importing)
     {
         <ImportClients OnClose="() => importing = false" OnImported="ReloadAsync" />
@@ -153,7 +158,7 @@
     private string? markRef, error, message;
     private bool loading = true, busy;
     private CancellationTokenSource? cts;
-    private bool importing;
+    private bool importing, history;
     private const int Page = 100, MaxShown = 2000;
     private int shown = Page, total = -1;
 

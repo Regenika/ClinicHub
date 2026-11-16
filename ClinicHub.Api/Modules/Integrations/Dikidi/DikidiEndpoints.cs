@@ -1,3 +1,4 @@
+using ClinicHub.Api.Modules.Shared;
 using ClinicHub.Api.Data;
 using ClinicHub.Api.Modules.Visits;
 using Microsoft.AspNetCore.Authorization;
@@ -19,6 +20,7 @@ public static class DikidiEndpoints
         group.MapGet("/status", GetStatus);
         group.MapGet("/unmapped-services", GetUnmapped);
         group.MapPost("/sync", SyncNow);
+        group.MapPost("/history", ImportHistory);
         return app;
     }
 
@@ -45,6 +47,30 @@ public static class DikidiEndpoints
                 .Where(m => m.Source == VisitSource.Dikidi).Select(m => m.ExternalKey).ToListAsync(ct))
             .Select(k => k.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         return Results.Ok(list.Where(u => !mapped.Contains(u.Name)).ToList());
+    }
+
+    /// <summary>
+    /// Клиенты из прошлых записей за период [from; to] (не длиннее 62 дней, только прошлое). Панель идёт помесячно назад.
+    /// </summary>
+    private static async Task<IResult> ImportHistory(DateOnly from, DateOnly to, DikidiSync sync, DikidiOptions options, TimeProvider clock, CancellationToken ct)
+    {
+        if (!options.IsConfigured)
+            return Results.Conflict("Адаптер Dikidi выключен: не заданы Dikidi:Phone, Dikidi:Password, Dikidi:CompanyId.");
+        if (to < from || to.DayNumber - from.DayNumber > 62)
+            return Results.BadRequest("Период — не длиннее двух месяцев.");
+        if (to >= MoscowTime.Date(clock.GetUtcNow().UtcDateTime))
+            return Results.BadRequest("Загрузка истории — только за прошедшие дни; будущие записи приносит обычная синхронизация.");
+        try
+        {
+            var result = await sync.ImportHistoryAsync(from, to, ct);
+            return result is null
+                ? Results.Conflict("Синхронизация уже идёт, повторите через минуту.")
+                : Results.Ok(result);
+        }
+        catch (DikidiException ex)
+        {
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway, title: "Ошибка Dikidi");
+        }
     }
 
     /// <summary>Синхронизировать сейчас (например, сразу после сопоставления услуг).</summary>

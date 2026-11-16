@@ -24,7 +24,10 @@ public sealed class MailingApiOptions
 }
 
 /// <summary>Понятная ошибка для страницы: что не так и что делать.</summary>
-public sealed class MailingApiException(string message) : Exception(message);
+public sealed class MailingApiException(string message, HttpStatusCode? status = null) : Exception(message)
+{
+    public HttpStatusCode? Status { get; } = status;
+}
 
 public sealed class MailingApi(HttpClient http, MailingApiOptions options, AuthenticationStateProvider auth)
 {
@@ -77,6 +80,8 @@ public sealed class MailingApi(HttpClient http, MailingApiOptions options, Authe
     public Task<List<AutoRuleDto>> AutoRulesAsync() => GetAsync<List<AutoRuleDto>>("api/auto-rules");
     public Task<AutoRuleDto> CreateAutoRuleAsync(AutoRuleInputDto dto) => PostAsync<AutoRuleDto>("api/auto-rules", dto);
     public Task UpdateAutoRuleAsync(int id, AutoRuleInputDto dto) => SendAsync<JsonElement>(HttpMethod.Put, $"api/auto-rules/{id}", dto);
+    public Task<DikidiHistoryDto> DikidiHistoryAsync(DateOnly from, DateOnly to) =>
+        PostAsync<DikidiHistoryDto>($"api/integrations/dikidi/history?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", null);
     public Task<List<CatalogServiceRef>> ServicesAsync() => GetAsync<List<CatalogServiceRef>>("api/catalog/admin/services");
 
     // ── транспорт ─────────────────────────────────────────────────────────────
@@ -113,7 +118,14 @@ public sealed class MailingApi(HttpClient http, MailingApiOptions options, Authe
                 return (await response.Content.ReadFromJsonAsync<T>(Json))!;
             }
 
-            var text = (await response.Content.ReadAsStringAsync()).Trim().Trim('"');
+            var text = (await response.Content.ReadAsStringAsync()).Trim();
+            if (text.StartsWith('{'))
+            {
+                // ProblemDetails: берём detail («Ошибка Dikidi: …»), а не весь JSON.
+                try { text = JsonDocument.Parse(text).RootElement.TryGetProperty("detail", out var d) ? d.GetString() ?? "" : ""; }
+                catch (JsonException) { text = ""; }
+            }
+            text = text.Trim('"');
             throw new MailingApiException(response.StatusCode switch
             {
                 HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
@@ -122,7 +134,7 @@ public sealed class MailingApi(HttpClient http, MailingApiOptions options, Authe
                 HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable when text.Length == 0 =>
                     "Сервер рассылок сейчас без связи с базой данных. Он подключится сам; попробуйте через минуту.",
                 _ => text.Length > 0 && text.Length < 400 ? text : $"Сервер рассылок ответил ошибкой {(int)response.StatusCode}.",
-            });
+            }, response.StatusCode);
         }
     }
 
@@ -172,3 +184,6 @@ public sealed record ConsentRecordDto(long Id, string Purpose, string Channel, b
 public sealed record PatientConsentsDto(int PatientId, bool IsSubscribed, IReadOnlyList<ConsentStateDto> Current, IReadOnlyList<ConsentRecordDto> Journal);
 public sealed record ConsentInputDto(string Purpose, string Channel, bool Granted, string Source,
     string? EvidenceRef = null, string? Comment = null, DateTime? At = null);
+
+/// <summary>Итог загрузки клиентов из прошлых записей журнала Dikidi (сервер: DikidiHistoryResult).</summary>
+public sealed record DikidiHistoryDto(int Records, int PatientsCreated, int LastVisitUpdated, int SkippedNoPhone);

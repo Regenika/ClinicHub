@@ -67,6 +67,82 @@ public sealed class DikidiSync(
         }
     }
 
+    /// <summary>
+    /// Клиенты из прошлых записей журнала (веб-панель → «Пациенты» → «Подтянуть из журнала Dikidi»).
+    /// Выгрузка «Клиентов» в Dikidi доступна только владельцу салона, а журнал адаптер читать может —
+    /// поэтому базу собираем по истории записей, помесячно. <b>Визиты не создаются</b>: иначе администратору
+    /// пришлось бы отмечать итог сотен старых записей. Создаются пациенты, у существующих дописывается
+    /// дата последней записи (<c>LastVisitAt</c>), если в Dikidi она позже.
+    /// null — синхронизация уже идёт.
+    /// </summary>
+    public async Task<DikidiHistoryResult?> ImportHistoryAsync(DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        if (!await state.Gate.WaitAsync(0, ct))
+            return null;
+        try
+        {
+            var journal = await client.GetJournalAsync(from, to, ct);
+            var result = await ApplyHistoryAsync(journal, ct);
+            logger.LogInformation(
+                "Dikidi, история {From}–{To}: записей {Records}, новых пациентов {Created}, обновлена дата визита {Updated}, без телефона {NoPhone}.",
+                from, to, result.Records, result.PatientsCreated, result.LastVisitUpdated, result.SkippedNoPhone);
+            return result;
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    /// <summary>Применить журнал прошлого периода: только пациенты (см. <see cref="ImportHistoryAsync"/>).</summary>
+    public async Task<DikidiHistoryResult> ApplyHistoryAsync(DikidiJournal journal, CancellationToken ct)
+    {
+        var now = clock.GetUtcNow().UtcDateTime;
+        int created = 0, noPhone = 0;
+        var lastVisitFor = new HashSet<int>();
+
+        var byPhone = new Dictionary<string, Patient>();
+        foreach (var p in await db.Patients.OrderBy(p => p.Id).ToListAsync(ct))
+        {
+            if (PhoneNumbers.TryNormalizeRuMobile(p.Phone, out var e164))
+                byPhone.TryAdd(e164, p);
+        }
+
+        foreach (var r in journal.Records.OrderBy(r => r.Date).ThenBy(r => r.Start))
+        {
+            if (!PhoneNumbers.TryNormalizeRuMobile(r.ClientPhone, out var phone))
+            {
+                noPhone++;
+                continue;
+            }
+            if (!byPhone.TryGetValue(phone, out var patient))
+            {
+                patient = new Patient
+                {
+                    FullName = Limit(r.ClientName?.Trim() is { Length: > 0 } n ? n : "Без имени (из Dikidi)", 200),
+                    Phone = phone,
+                    Source = PatientSource.Dikidi,
+                    CreatedAt = now,
+                };
+                db.Patients.Add(patient);
+                byPhone[phone] = patient;
+                created++;
+            }
+
+            // Отменённая запись — не визит. Будущие записи ведёт обычная синхронизация.
+            var startAt = MoscowTime.ToUtc(r.Date, r.Start);
+            if (r.State == DikidiRecordState.Active && startAt < now && (patient.LastVisitAt is null || patient.LastVisitAt < startAt))
+            {
+                if (patient.Id != 0)
+                    lastVisitFor.Add(patient.Id);
+                patient.LastVisitAt = startAt;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        return new DikidiHistoryResult(journal.Records.Count, created, lastVisitFor.Count, noPhone);
+    }
+
     /// <summary>Применить уже полученный журнал за период [from; to] (даты по Москве).</summary>
     public async Task<DikidiSyncResult> ApplyAsync(DikidiJournal journal, DateOnly from, DateOnly to, CancellationToken ct)
     {

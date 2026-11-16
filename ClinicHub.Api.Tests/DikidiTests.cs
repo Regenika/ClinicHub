@@ -289,4 +289,28 @@ public sealed class DikidiSyncTests : IDisposable
             return Error is null ? Task.FromResult(Journal) : Task.FromException<DikidiJournal>(Error);
         }
     }
+
+    [Fact]
+    public async Task HistoryCreatesPatientsWithoutVisits()
+    {
+        var old = new DateOnly(2025, 3, 10);
+        var result = await _sync.ApplyHistoryAsync(new DikidiJournal(
+        [
+            Rec("h1", date: old),                                                    // известный пациент
+            Rec("h2", phone: "+79990000077", name: "Тестов Новый", date: old),
+            Rec("h3", phone: "+79990000077", name: "Тестов Новый", date: old.AddDays(20)),
+            Rec("h4", phone: "+79990000078", name: "Тестова Отмена", date: old, state: DikidiRecordState.Cancelled),
+            Rec("h5", phone: null, date: old),
+        ], 0), CancellationToken.None);
+
+        Assert.Equal(5, result.Records);
+        Assert.Equal(2, result.PatientsCreated);
+        Assert.Equal(1, result.LastVisitUpdated);
+        Assert.Equal(1, result.SkippedNoPhone);
+        Assert.Empty(_db.Visits);
+        var fresh = await _db.Patients.SingleAsync(p => p.Phone == "+79990000077");
+        Assert.Equal(PatientSource.Dikidi, fresh.Source);
+        Assert.Equal(new DateTime(2025, 3, 30, 11, 30, 0), fresh.LastVisitAt);   // 14:30 МСК = 11:30 UTC
+        Assert.Null((await _db.Patients.SingleAsync(p => p.Phone == "+79990000078")).LastVisitAt);
+    }
 }

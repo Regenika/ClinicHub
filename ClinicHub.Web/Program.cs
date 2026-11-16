@@ -93,7 +93,7 @@ var mailingOptions = new MailingApiOptions();
 builder.Configuration.GetSection("Api").Bind(mailingOptions);
 mailingOptions.KeyFile = builder.Configuration["Panel:KeyFile"] ?? mailingOptions.KeyFile;
 builder.Services.AddSingleton(mailingOptions);
-builder.Services.AddHttpClient<MailingApi>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<MailingApi>(c => c.Timeout = TimeSpan.FromSeconds(120));
 
 // Кириллицу в HTML отдаём как есть, а не &#x...; — страницы короче и читаемее. Опасные символы (<, >, &, ") по-прежнему экранируются.
 builder.Services.AddWebEncoders(o => o.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));
