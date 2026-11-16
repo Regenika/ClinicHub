@@ -46,6 +46,10 @@
             {
                 <p class="muted">Никого не нашли.</p>
             }
+            else if (!loading)
+            {
+                <span class="muted small">@ListInfo</span>
+            }
             <ul class="m-list">
                 @foreach (var p in list)
                 {
@@ -57,6 +61,10 @@
                     </li>
                 }
             </ul>
+            @if (list.Count >= shown && shown < MaxShown)
+            {
+                <button type="button" class="btn btn--outline btn--sm" @onclick="MoreAsync">Показать ещё</button>
+            }
         </div>
 
         <aside class="card stack m-split__side" aria-label="Карточка пациента">
@@ -137,6 +145,12 @@
     private string? markRef, error, message;
     private bool loading = true, busy;
     private CancellationTokenSource? cts;
+    private const int Page = 100, MaxShown = 2000;
+    private int shown = Page, total = -1;
+
+    private string ListInfo => string.IsNullOrWhiteSpace(query)
+        ? $"Показано {list.Count}" + (total >= 0 ? $" из {total} с телефоном" : "") + " (по алфавиту). Поиск ищет среди всех."
+        : $"Найдено: {list.Count}" + (list.Count >= shown ? "+" : "");
 
     private ConsentStateDto? Pd => consents?.Current.FirstOrDefault(c => c.Purpose == "Service" && c.Channel == "Sms");
     private ConsentStateDto? Ads => consents?.Current.FirstOrDefault(c => c.Purpose == "Marketing" && c.Channel == "Sms");
@@ -155,7 +169,11 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try { list = await Api.PatientsAsync(null, 30); }
+        try
+        {
+            list = await Api.PatientsAsync(null, shown);
+            try { total = (await Api.AudienceAsync("all")).Count; } catch (MailingApiException) { total = -1; }
+        }
         catch (MailingApiException ex) { error = ex.Message; }
         finally { loading = false; }
     }
@@ -168,9 +186,17 @@
         try
         {
             await Task.Delay(250, my.Token);
-            list = await Api.PatientsAsync(query, 30);
+            shown = Page;
+            list = await Api.PatientsAsync(query, shown);
         }
         catch (TaskCanceledException) { }
+        catch (MailingApiException ex) { error = ex.Message; }
+    }
+
+    private async Task MoreAsync()
+    {
+        shown = Math.Min(shown + Page * 5, MaxShown);
+        try { list = await Api.PatientsAsync(query, shown); }
         catch (MailingApiException ex) { error = ex.Message; }
     }
 
