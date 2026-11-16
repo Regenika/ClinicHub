@@ -1,6 +1,9 @@
 namespace ClinicHub.Api.Modules.Integrations.Dikidi;
 
 /// <summary>Итог одной синхронизации. Только счётчики и названия услуг — без данных пациентов.</summary>
+/// <summary>Итог загрузки клиентов из прошлых записей журнала (без визитов).</summary>
+public sealed record DikidiHistoryResult(int Records, int PatientsCreated, int LastVisitUpdated, int SkippedNoPhone);
+
 public sealed record DikidiSyncResult(
     DateOnly From,
     DateOnly To,

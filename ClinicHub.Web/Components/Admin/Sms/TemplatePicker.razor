@@ -1,0 +1,125 @@
+@using ClinicHub.Core.Dtos
+@inject MailingApi Api
+
+@* Выбор шаблона и текст сообщения. Правку шаблона можно оставить только на этот раз, сохранить как новый шаблон
+   или заменить исходный (решение Свята, 17.11). *@
+
+<div class="field">
+    <label for="@TplId">Шаблон</label>
+    <select id="@TplId" class="m-select" value="@SelectedId" @onchange="PickAsync">
+        <option value="">— без шаблона, свой текст —</option>
+        @foreach (var t in Templates)
+        {
+            <option value="@t.Id">@t.Name</option>
+        }
+    </select>
+    <span class="muted small">Шаблонов: @Templates.Count. Список и правка всех шаблонов — в разделе «Шаблоны».</span>
+</div>
+
+<div class="field">
+    <label for="@TextId">Текст сообщения</label>
+    <textarea id="@TextId" rows="5" value="@Text" @oninput="OnInput"></textarea>
+    <span class="muted small">@MailingText.Counter(MailingText.Preview(Text, "Анна Смирнова", Marketing)) · «{Имя}» заменится на имя пациента</span>
+</div>
+
+@if (Selected is not null && !keepOnce && Text != Selected.Text)
+{
+    <div class="m-tplbar" role="status">
+        <span>Вы изменили шаблон «@Selected.Name». Что сделать с правкой?</span>
+        <button type="button" class="btn btn--outline btn--sm" @onclick="() => keepOnce = true">Только для этого раза</button>
+        <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="SaveAsNewAsync">Сохранить как новый шаблон</button>
+        <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="ReplaceAsync">Заменить шаблон</button>
+    </div>
+}
+else if (Selected is null && !string.IsNullOrWhiteSpace(Text) && !savedFree)
+{
+    <div class="m-actions">
+        @if (naming)
+        {
+            <input type="text" aria-label="Название шаблона" placeholder="Название шаблона" @bind="newName" style="max-width: 320px" />
+            <button type="button" class="btn btn--outline btn--sm" disabled="@busy" @onclick="SaveAsNewAsync">Сохранить</button>
+        }
+        else
+        {
+            <button type="button" class="btn btn--outline btn--sm" @onclick="() => naming = true">Сохранить этот текст как шаблон</button>
+        }
+    </div>
+}
+@if (error is not null)
+{
+    <div class="form-errors" role="alert">@error</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public List<MessageTemplateDto> Templates { get; set; } = new();
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public EventCallback<string> TextChanged { get; set; }
+    [Parameter] public string SelectedId { get; set; } = "";
+    [Parameter] public EventCallback<string> SelectedIdChanged { get; set; }
+    [Parameter] public bool Marketing { get; set; }
+    [Parameter] public string IdPrefix { get; set; } = "m";
+    [Parameter] public EventCallback<string> Notify { get; set; }
+
+    private string TplId => IdPrefix + "-tpl";
+    private string TextId => IdPrefix + "-text";
+    private MessageTemplateDto? Selected => int.TryParse(SelectedId, out var id) ? Templates.FirstOrDefault(t => t.Id == id) : null;
+    private bool keepOnce, busy, naming, savedFree;
+    private string? error, newName;
+
+    private async Task PickAsync(ChangeEventArgs e)
+    {
+        SelectedId = e.Value?.ToString() ?? "";
+        keepOnce = false;
+        savedFree = false;
+        await SelectedIdChanged.InvokeAsync(SelectedId);
+        if (Selected is { } t)
+        {
+            Text = t.Text;
+            await TextChanged.InvokeAsync(Text);
+        }
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        Text = e.Value?.ToString() ?? "";
+        keepOnce = false;
+        savedFree = false;
+        await TextChanged.InvokeAsync(Text);
+    }
+
+    private async Task SaveAsNewAsync()
+    {
+        var name = Selected is { } t ? t.Name + " (вариант)" : string.IsNullOrWhiteSpace(newName) ? "Новый шаблон" : newName.Trim();
+        await RunAsync(async () =>
+        {
+            var created = await Api.CreateTemplateAsync(new MessageTemplateInputDto { Name = name, Text = Text.Trim(), IsActive = true });
+            Templates.Add(created);
+            SelectedId = created.Id.ToString();
+            await SelectedIdChanged.InvokeAsync(SelectedId);
+            naming = false;
+            savedFree = true;
+            await Notify.InvokeAsync($"Сохранён новый шаблон «{name}». Название можно поменять в разделе «Шаблоны».");
+        });
+    }
+
+    private async Task ReplaceAsync()
+    {
+        if (Selected is not { } t)
+            return;
+        await RunAsync(async () =>
+        {
+            await Api.UpdateTemplateAsync(t.Id, new MessageTemplateInputDto { Name = t.Name, Text = Text.Trim(), IsActive = t.IsActive });
+            t.Text = Text.Trim();
+            await Notify.InvokeAsync($"Шаблон «{t.Name}» обновлён.");
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        busy = true;
+        error = null;
+        try { await action(); }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

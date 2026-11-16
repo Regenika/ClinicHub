@@ -1,0 +1,427 @@
+@page "/admin/sms/rassylki/novaya"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout AdminLayout
+@using System.Globalization
+@using ClinicHub.Core.Dtos
+@using ClinicHub.Core.Entities
+@using ClinicHub.Web.Booking
+@inject MailingApi Api
+@inject NavigationManager Nav
+
+<PageTitle>Новая рассылка — SMS</PageTitle>
+
+<section class="stack-lg">
+    <div><a class="btn btn--outline btn--sm" href="/admin/sms/rassylki">← Рассылки</a></div>
+    <h1 class="h2">Новая рассылка</h1>
+    <ol class="m-steps" aria-label="Шаги">
+        <li class="@(step == 1 ? "on" : "")"><b>1</b>Кому и когда</li>
+        <li class="@(step == 2 ? "on" : "")"><b>2</b>Текст</li>
+        <li class="@(step == 3 ? "on" : "")"><b>3</b>Проверка</li>
+    </ol>
+
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+
+    @if (step == 1)
+    {
+        <div class="card stack-lg">
+            <fieldset class="field">
+                <legend class="h3">Когда отправлять</legend>
+                <div class="m-choices">
+                    <button type="button" class="@Choice(!auto)" aria-pressed="@(!auto)" @onclick="() => SetAuto(false)">
+                        <span><b>Один раз</b><br /><span class="muted small">Акция, новость, «клиника закрыта». Сейчас или в выбранное время.</span></span>
+                    </button>
+                    <button type="button" class="@Choice(auto)" aria-pressed="@auto" @onclick="() => SetAuto(true)">
+                        <span><b>Автоматически, по событию</b><br /><span class="muted small">После визита, «давно не был», день рождения. Работает, пока включена.</span></span>
+                    </button>
+                </div>
+            </fieldset>
+
+            @if (auto)
+            {
+                <fieldset class="field">
+                    <legend class="h3">Какое событие</legend>
+                    <div class="stack-sm">
+                        <button type="button" class="@Choice(trigger == "after")" aria-pressed="@(trigger == "after")" @onclick="@(() => SetTrigger("after"))">
+                            <span><b>После визита</b><br /><span class="muted small">Как самочувствие, пора на повторную процедуру. Визиты — из Dikidi, когда запись отмечена состоявшейся.</span></span>
+                        </button>
+                        @if (trigger == "after")
+                        {
+                            <div class="admin-form__row">
+                                <div class="field"><label for="a-days">Через сколько дней</label><input id="a-days" type="number" min="0" max="365" @bind="afterDays" /></div>
+                                <div class="field">
+                                    <label for="a-svc">После какой услуги</label>
+                                    <select id="a-svc" @bind="serviceId">
+                                        <option value="">Любой</option>
+                                        @foreach (var s in services)
+                                        {
+                                            <option value="@s.Id">@s.Name</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+                        <button type="button" class="@Choice(trigger == "lost")" aria-pressed="@(trigger == "lost")" @onclick="@(() => SetTrigger("lost"))">
+                            <span><b>Давно не был</b><br /><span class="muted small">Один раз, когда с последнего визита прошло столько дней и нет новой записи.</span></span>
+                        </button>
+                        @if (trigger == "lost")
+                        {
+                            <div class="field" style="max-width: 260px"><label for="a-lost">Сколько дней без визита</label><input id="a-lost" type="number" min="30" max="1000" @bind="lostDays" /></div>
+                        }
+                        <button type="button" class="@Choice(trigger == "birthday")" aria-pressed="@(trigger == "birthday")" @onclick="@(() => SetTrigger("birthday"))">
+                            <span><b>День рождения</b><br /><span class="muted small">Утром в день рождения. Нужна дата рождения в карточке пациента.</span></span>
+                        </button>
+                        <button type="button" class="m-choice" disabled>
+                            <span><b>Перед записью</b> <span class="m-chip">скоро</span><br /><span class="muted small">Напоминание за N дней до визита. Появится следующим обновлением.</span></span>
+                        </button>
+                    </div>
+                </fieldset>
+            }
+
+            <fieldset class="field">
+                <legend class="h3">О чём</legend>
+                <div class="m-choices">
+                    <button type="button" class="@Choice(marketing)" aria-pressed="@marketing" @onclick="() => marketing = true">
+                        <span><b>Реклама: акция, скидка, поздравление</b><br /><span class="muted small">Получат только согласившиеся на рекламу. В конце — «Отказ: СТОП».</span></span>
+                    </button>
+                    <button type="button" class="@Choice(!marketing)" aria-pressed="@(!marketing)" @onclick="() => marketing = false">
+                        <span><b>По записи или важное для всех</b><br /><span class="muted small">Самочувствие после процедуры, клиника закрыта, сменился телефон. Без рекламы.</span></span>
+                    </button>
+                </div>
+            </fieldset>
+
+            @if (!auto)
+            {
+                <fieldset class="field">
+                    <legend class="h3">Кому</legend>
+                    <div class="m-choices">
+                        @foreach (var a in Audiences)
+                        {
+                            <button type="button" class="@Choice(audience == a.Key)" aria-pressed="@(audience == a.Key)" @onclick="() => PickAudienceAsync(a.Key)">
+                                <span><b>@a.Label</b><br /><span class="muted small">@a.Hint</span></span>
+                                <span class="m-choice__count">@(counts.TryGetValue(a.Key, out var c) ? c.ToString() : "")</span>
+                            </button>
+                        }
+                    </div>
+                    @if (audience == "service")
+                    {
+                        <div class="field" style="max-width: 420px">
+                            <label for="w-svc">Услуга</label>
+                            <select id="w-svc" value="@serviceId" @onchange="PickServiceAsync">
+                                <option value="">— выберите —</option>
+                                @foreach (var s in services)
+                                {
+                                    <option value="@s.Id">@s.Name</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (audience == "birthday")
+                    {
+                        <div class="field" style="max-width: 260px">
+                            <label for="w-month">Месяц</label>
+                            <select id="w-month" value="@month" @onchange="PickMonthAsync">
+                                @for (var m = 1; m <= 12; m++)
+                                {
+                                    var mm = m;
+                                    <option value="@mm">@ClinicTime.Ru.DateTimeFormat.MonthNames[mm - 1]</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (audience is "recent" or "lost")
+                    {
+                        <div class="field" style="max-width: 260px">
+                            <label for="w-months">Месяцев</label>
+                            <input id="w-months" type="number" min="1" max="60" value="@months" @onchange="PickMonthsAsync" />
+                        </div>
+                    }
+                </fieldset>
+            }
+
+            <div class="m-actions" style="justify-content: flex-end"><button type="button" class="btn btn--primary" @onclick="ToText">Дальше: текст</button></div>
+        </div>
+    }
+
+    @if (step == 2)
+    {
+        <div class="m-split">
+            <div class="card stack m-split__main">
+                <div class="field">
+                    <label for="w-title">Название (видите только вы)</label>
+                    <input id="w-title" type="text" @bind="title" />
+                </div>
+                <TemplatePicker Templates="templates" @bind-Text="text" @bind-SelectedId="templateId" Marketing="marketing" IdPrefix="wz" Notify="@((string n) => notice = n)" />
+                @if (auto)
+                {
+                    <div class="field" style="max-width: 200px">
+                        <label for="w-time">Время отправки</label>
+                        <input id="w-time" type="time" min="09:00" max="20:59" @bind="sendTime" />
+                    </div>
+                }
+                @if (notice is not null)
+                {
+                    <div class="notice" role="status">@notice</div>
+                }
+                <div class="admin-head">
+                    <button type="button" class="btn btn--outline" @onclick="() => step = 1">Назад</button>
+                    <button type="button" class="btn btn--primary" disabled="@busy" @onclick="ToCheckAsync">Дальше: проверка</button>
+                </div>
+            </div>
+            <aside class="card card--soft stack-sm m-split__side" aria-label="Пример сообщения">
+                <div class="muted small">Так увидит Анна Смирнова</div>
+                <div class="m-bubble">@(string.IsNullOrWhiteSpace(text) ? "Здесь появится текст" : MailingText.Preview(text, "Анна Смирнова", marketing))</div>
+            </aside>
+        </div>
+    }
+
+    @if (step == 3)
+    {
+        <div class="card stack-lg">
+            <h2 class="h3">Проверьте перед запуском</h2>
+            @if (!auto && estimate is not null)
+            {
+                <div class="m-grid">
+                    <div class="m-stat m-stat--accent"><div class="muted small">Получат</div><div class="m-stat__value">@estimate.Recipients</div><div class="muted small">из @estimate.Total в группе</div></div>
+                    <div class="m-stat"><div class="muted small">SMS на одного</div><div class="m-stat__value">@Math.Max(1, estimate.SegmentsPerMessage)</div><div class="muted small">всего ≈ @estimate.TotalSms SMS</div></div>
+                    <div class="m-stat"><div class="muted small">Закончим</div><div class="m-stat__value" style="font-size: 20px">@MailingText.When(estimate.FinishesAt)</div><div class="muted small">@Speed</div></div>
+                </div>
+                @if (estimate.Skipped.Count > 0)
+                {
+                    <div>
+                        <h3 class="h3" style="font-size: 16px">Не получат: @estimate.Skipped.Sum(s => s.Count)</h3>
+                        <ul style="margin: 8px 0 0; padding-left: 20px; line-height: 1.7">
+                            @foreach (var s in estimate.Skipped)
+                            {
+                                <li>@s.Count — @s.Reason</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                @if (estimate.Phones == 0)
+                {
+                    <div class="notice" role="note">Нет ни одного включённого телефона с SIM: рассылка встанет в очередь и уйдёт, когда телефон подключится.</div>
+                }
+            }
+            @if (auto)
+            {
+                <div class="m-grid">
+                    <div class="m-stat m-stat--accent"><div class="muted small">Событие</div><div class="m-stat__value" style="font-size: 18px">@TriggerText</div></div>
+                    <div class="m-stat"><div class="muted small">Время отправки</div><div class="m-stat__value" style="font-size: 20px">@sendTime.ToString("HH:mm")</div></div>
+                    <div class="m-stat"><div class="muted small">SMS на одно сообщение</div><div class="m-stat__value">@MailingText.Segments(MailingText.Preview(text, "Анна Смирнова", marketing)).Parts</div></div>
+                </div>
+                <p class="muted">Кому не уйдёт, даже когда событие сработает: тем, кто ответил «СТОП»@(marketing ? ", и тем, кто не соглашался получать рекламу" : ""), и пациентам без телефона.</p>
+            }
+            <div>
+                <div class="muted small" style="margin-bottom: 8px">Текст</div>
+                <div class="m-bubble" style="max-width: 560px">@MailingText.Preview(text, "Анна Смирнова", marketing)</div>
+            </div>
+
+            <div class="admin-head">
+                <button type="button" class="btn btn--outline" @onclick="() => step = 2">Назад</button>
+                @if (!auto)
+                {
+                    <div class="m-actions">
+                        <input type="datetime-local" aria-label="Когда запустить" @bind="planned" style="max-width: 240px" />
+                        <button type="button" class="btn btn--outline" disabled="@busy" @onclick="() => LaunchAsync(true)">Запустить в это время</button>
+                        <button type="button" class="btn btn--primary" disabled="@busy" @onclick="() => LaunchAsync(false)">Запустить сейчас</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="m-actions">
+                        <button type="button" class="btn btn--outline" disabled="@busy" @onclick="() => SaveAutoAsync(false)">Сохранить выключенной</button>
+                        <button type="button" class="btn btn--primary" disabled="@busy" @onclick="() => SaveAutoAsync(true)">Включить</button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    private sealed record Aud(string Key, string Label, string Hint);
+    private static readonly Aud[] Audiences =
+    [
+        new("all", "Все пациенты", "У кого есть телефон"),
+        new("recent", "Были недавно", "Визит за последние месяцы (по Dikidi)"),
+        new("lost", "Давно не были", "Последний визит раньше, и нет новой записи"),
+        new("service", "Делали услугу", "Выбрать услугу из каталога"),
+        new("birthday", "День рождения в месяце", "Нужна дата рождения в карточке"),
+    ];
+
+    private int step = 1;
+    private bool auto, marketing = true, busy;
+    private string trigger = "after", audience = "all", serviceId = "", templateId = "", title = "", text = "";
+    private int afterDays = 2, lostDays = 180, months = 6, month = DateTime.Today.AddMonths(1).Month;
+    private TimeOnly sendTime = new(11, 0);
+    private DateTime planned = DateTime.Today.AddDays(1).AddHours(10);
+    private readonly Dictionary<string, int> counts = new();
+    private List<int> ids = new();
+    private List<MessageTemplateDto> templates = new();
+    private List<CatalogServiceRef> services = new();
+    private RequestEstimateDto? estimate;
+    private string? error, notice;
+
+    private static string Choice(bool on) => on ? "m-choice m-choice--on" : "m-choice";
+
+    private string Speed => estimate is null ? "" :
+        $"{estimate.Phones} {MailingText.Plural(estimate.Phones, "телефон", "телефона", "телефонов")}, {estimate.PerMinute} SMS в минуту, только 9:00–20:00";
+
+    private string TriggerText => trigger switch
+    {
+        "after" => $"Через {afterDays} дн. после визита" + (serviceId.Length > 0 ? $" ({services.FirstOrDefault(s => s.Id == serviceId)?.Name})" : ""),
+        "lost" => $"Не был {lostDays} дн.",
+        _ => "День рождения",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            templates = (await Api.TemplatesAsync()).Where(t => t.IsActive).OrderBy(t => t.Name).ToList();
+            try { services = await Api.ServicesAsync(); } catch (MailingApiException) { services = new(); }
+            await PickAudienceAsync("all");
+            foreach (var k in new[] { "recent", "lost" })
+                counts[k] = (await Api.AudienceAsync(k, months)).Count;
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+    }
+
+    private void SetAuto(bool value)
+    {
+        auto = value;
+        if (auto)
+        {
+            marketing = false;
+            sendTime = new TimeOnly(11, 0);
+        }
+    }
+
+    private void SetTrigger(string t)
+    {
+        trigger = t;
+        if (t == "birthday") { marketing = true; sendTime = new TimeOnly(10, 0); }
+    }
+
+    private async Task PickAudienceAsync(string key)
+    {
+        audience = key;
+        error = null;
+        try
+        {
+            AudienceDto? result = key switch
+            {
+                "service" when serviceId.Length == 0 => null,
+                "service" => await Api.AudienceAsync("service", serviceId: serviceId),
+                "birthday" => await Api.AudienceAsync("birthday", month: month),
+                "recent" or "lost" => await Api.AudienceAsync(key, months),
+                _ => await Api.AudienceAsync("all"),
+            };
+            ids = result?.Ids ?? new();
+            if (result is not null)
+                counts[key] = result.Count;
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+    }
+
+    private async Task PickServiceAsync(ChangeEventArgs e) { serviceId = e.Value?.ToString() ?? ""; await PickAudienceAsync("service"); }
+    private async Task PickMonthAsync(ChangeEventArgs e) { month = int.TryParse(e.Value?.ToString(), out var m) ? m : month; await PickAudienceAsync("birthday"); }
+    private async Task PickMonthsAsync(ChangeEventArgs e) { months = Math.Clamp(int.TryParse(e.Value?.ToString(), out var m) ? m : months, 1, 60); await PickAudienceAsync(audience); }
+
+    private void ToText()
+    {
+        error = null;
+        if (!auto && ids.Count == 0) { error = "В выбранной группе никого нет — выберите другую."; return; }
+        if (string.IsNullOrWhiteSpace(title))
+            title = auto ? TriggerText : (marketing ? "Акция" : "Сообщение всем") + " " + DateTime.Now.ToString("dd.MM");
+        step = 2;
+    }
+
+    private CreateSmsRequestDto BuildRequest(bool scheduled) => new()
+    {
+        Type = RequestType.Mass,
+        Purpose = marketing ? MessagePurpose.Marketing : MessagePurpose.Service,
+        Title = title.Trim(),
+        SendMode = scheduled ? SendMode.Custom : SendMode.Now,
+        PlannedSendAt = scheduled ? ClinicTime.FromLocal(DateOnly.FromDateTime(planned), TimeOnly.FromDateTime(planned)).UtcDateTime : null,
+        TextTemplate = MailingText.ForSend(text, marketing),
+        Recipients = ids.Select(id => new RecipientInputDto { PatientId = id }).ToList(),
+    };
+
+    private async Task ToCheckAsync()
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(text)) { error = "Напишите текст или выберите шаблон."; return; }
+        if (auto)
+        {
+            if (sendTime < new TimeOnly(9, 0) || sendTime > new TimeOnly(20, 59)) { error = "Время отправки — с 9:00 до 20:59."; return; }
+            step = 3;
+            return;
+        }
+        busy = true;
+        try
+        {
+            estimate = await Api.EstimateAsync(BuildRequest(false));
+            step = 3;
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task LaunchAsync(bool scheduled)
+    {
+        error = null;
+        if (scheduled && ClinicTime.FromLocal(DateOnly.FromDateTime(planned), TimeOnly.FromDateTime(planned)) <= DateTimeOffset.UtcNow)
+        {
+            error = "Время запуска уже прошло — выберите будущее.";
+            return;
+        }
+        busy = true;
+        try
+        {
+            await Api.CreateRequestAsync(BuildRequest(scheduled));
+            Nav.NavigateTo("/admin/sms/rassylki?tab=once");
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task SaveAutoAsync(bool active)
+    {
+        error = null;
+        busy = true;
+        // Сервер подставляет {name}; в панели метка называется {Имя}.
+        var body = MailingText.ForSend(text, marketing).Replace("{Имя}", "{name}", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            if (trigger == "birthday")
+            {
+                await Api.CreateAutoRuleAsync(new AutoRuleInputDto
+                {
+                    Name = title.Trim(),
+                    Trigger = AutoRuleTrigger.Birthday,
+                    Purpose = marketing ? MessagePurpose.Marketing : MessagePurpose.Service,
+                    TextTemplate = body,
+                    SendTime = sendTime.ToTimeSpan(),
+                    IsActive = active,
+                });
+            }
+            else
+            {
+                var step1 = new ScenarioStepDto(null, 1, trigger == "after" ? Math.Clamp(afterDays, 0, 365) : 0,
+                    sendTime.ToString("HH:mm", CultureInfo.InvariantCulture), body);
+                await Api.CreateScenarioAsync(new ScenarioInputDto(
+                    title.Trim(), marketing ? "Marketing" : "Service", trigger == "after" ? "VisitCompleted" : "NoVisitFor",
+                    [step1], trigger == "after" && serviceId.Length > 0 ? [serviceId] : [],
+                    trigger == "lost" ? Math.Clamp(lostDays, 30, 1000) : null, active));
+            }
+            Nav.NavigateTo("/admin/sms/rassylki?tab=auto");
+        }
+        catch (MailingApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

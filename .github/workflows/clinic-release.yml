@@ -1,0 +1,116 @@
+# Установщик и обновление для компьютера клиники: сервер (ClinicHub.Api) + сайт с админкой (ClinicHub.Web).
+#
+# Запуск:
+#   - тег clinic-v<версия>, например:  git tag clinic-v2026.11.17  →  git push origin clinic-v2026.11.17
+#     → в GitHub Releases архивы:
+#         ClinicHub-Update-<версия>.zip  — обновление одним update.cmd (настройки и база сохраняются);
+#         ClinicHub-Api-<версия>.zip, ClinicHub-Web-<версия>.zip — первая установка, как раньше (deploy\README.txt).
+#     Релиз не помечается «последним»: ссылка releases/latest для телефона ведёт на APK SmsAgent.
+#   - ветка release/clinic-v<версия> (если теги не пушатся, например из облачной сессии Claude) — то же самое:
+#     релиз с тегом clinic-v<версия> создаёт сам workflow на коммите ветки;
+#   - вручную (Actions → «Релиз для клиники» → Run workflow) — только сборка, архивы в артефактах запуска.
+#
+# Сборка автономная (win-x64, self-contained): на компьютер клиники .NET ставить не нужно.
+name: Релиз для клиники
+
+on:
+  push:
+    tags: ["clinic-v*"]
+    branches: ["release/clinic-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # создать релиз
+
+concurrency:
+  group: clinic-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  package:
+    name: Архивы для клиники
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Кэш пакетов NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-win-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-win-
+
+      - name: Версия
+        id: ver
+        run: |
+          $ref = "${{ github.ref_name }}"
+          if ("${{ github.ref_type }}" -eq "tag") { $v = $ref.Substring("clinic-v".Length) }
+          elseif ($ref -like "release/clinic-v*") { $v = $ref.Substring("release/clinic-v".Length) }
+          else { $v = (Get-Date -Format "yyyy.MM.dd") + "-test${{ github.run_number }}" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "release=$(if ("${{ github.event_name }}" -eq "push") { "true" } else { "false" })" >> $env:GITHUB_OUTPUT
+          Write-Host "Версия: $v"
+
+      - name: Тесты
+        run: dotnet test ClinicHub.Api.Tests/ClinicHub.Api.Tests.csproj -c Release
+
+      - name: Сборка сервера
+        run: ./deploy/api/build-package.ps1 -NoZip
+
+      - name: Сборка сайта
+        run: ./deploy/web/build-package.ps1 -NoZip
+
+      - name: Архивы
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $a = Join-Path $PWD "artifacts"
+          $out = Join-Path $a "release"
+          New-Item -ItemType Directory -Force $out | Out-Null
+
+          # Обновление: api\ и web\ (те же установщики, запускаются с -Unattended) + update.cmd.
+          $upd = Join-Path $a "update-package"
+          Remove-Item $upd -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $upd | Out-Null
+          Copy-Item (Join-Path $a "api-package") (Join-Path $upd "api") -Recurse
+          Copy-Item (Join-Path $a "web-package") (Join-Path $upd "web") -Recurse
+          Copy-Item deploy/update/* $upd
+          Set-Content (Join-Path $upd "VERSION.txt") "$v ($env:GITHUB_SHA)" -Encoding utf8
+
+          Compress-Archive -Path (Join-Path $upd "*") -DestinationPath (Join-Path $out "ClinicHub-Update-$v.zip")
+          Compress-Archive -Path (Join-Path $a "api-package\*") -DestinationPath (Join-Path $out "ClinicHub-Api-$v.zip")
+          Compress-Archive -Path (Join-Path $a "web-package\*") -DestinationPath (Join-Path $out "ClinicHub-Web-$v.zip")
+          Get-ChildItem $out | ForEach-Object { "{0}  {1:N1} МБ" -f $_.Name, ($_.Length / 1MB) }
+
+      - name: Архивы в артефакты запуска
+        uses: actions/upload-artifact@v4
+        with:
+          name: clinic-${{ steps.ver.outputs.version }}
+          path: artifacts/release/*.zip
+          retention-days: 30
+
+      - name: Релиз
+        if: steps.ver.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $notes = @"
+          Обновление ClinicHub для компьютера клиники (сервер + сайт с админкой).
+
+          **Обновить:** скачать ClinicHub-Update-$v.zip → распаковать → update.cmd. Настройки, база и тексты сайта сохраняются.
+          **Первая установка:** ClinicHub-Api-$v.zip и ClinicHub-Web-$v.zip, по шагам из deploy\README.txt.
+          "@
+          gh release create "clinic-v$v" artifacts/release/*.zip --target $env:GITHUB_SHA --title "Клиника $v" --notes $notes --latest=false

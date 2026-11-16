@@ -82,3 +82,48 @@ public class SmsRequestOutDto
     public int SkippedCount { get; set; }
     public List<RecipientOutDto> Recipients { get; set; } = new();
 }
+
+/// <summary>Расчёт рассылки до запуска: POST /api/requests/estimate.</summary>
+public class RequestEstimateDto
+{
+    /// <summary>Сколько всего в выбранной группе.</summary>
+    public int Total { get; set; }
+    /// <summary>Сколько получат (с телефоном и с нужным согласием на сейчас).</summary>
+    public int Recipients { get; set; }
+    /// <summary>Кого пропустим и почему, по причинам.</summary>
+    public List<SkipGroupDto> Skipped { get; set; } = new();
+    public int SegmentsPerMessage { get; set; }
+    public int TotalSms { get; set; }
+    /// <summary>Сколько включённых SIM делят отправку.</summary>
+    public int Phones { get; set; }
+    public int PerMinute { get; set; }
+    public DateTime StartsAt { get; set; }
+    /// <summary>Примерное окончание (UTC) с учётом окна отправки и суточных лимитов.</summary>
+    public DateTime? FinishesAt { get; set; }
+}
+
+public class SkipGroupDto
+{
+    public string Reason { get; set; } = "";
+    public int Count { get; set; }
+}
+
+/// <summary>Строка журнала: одно сообщение одному получателю (GET /api/requests/recipients).</summary>
+public class RecipientLogDto
+{
+    public int Id { get; set; }
+    public int RequestId { get; set; }
+    public string RequestTitle { get; set; } = "";
+    public string RequestType { get; set; } = "";
+    public string Purpose { get; set; } = "";
+    public int? PatientId { get; set; }
+    public string? PatientName { get; set; }
+    public string Phone { get; set; } = "";
+    public string MessageText { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string? SkipReason { get; set; }
+    public string? LastError { get; set; }
+    public DateTime? SendAfter { get; set; }
+    public DateTime? SentAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}

@@ -1,0 +1,115 @@
+@using ClinicHub.Web.Booking
+@inject MailingApi Api
+@implements IDisposable
+
+@* Клиенты из прошлых записей журнала Dikidi: выгрузку «Клиентов» может сделать только владелец салона,
+   а журнал адаптер читает. Идём помесячно назад, визиты не создаются — только пациенты. *@
+
+<div class="card card--soft stack">
+    <div class="admin-head">
+        <h2 class="h3">Подтянуть клиентов из Dikidi</h2>
+        <button type="button" class="btn btn--outline btn--sm" disabled="@running" @onclick="() => OnClose.InvokeAsync()">Закрыть</button>
+    </div>
+    <p class="muted small" style="margin: 0">
+        Соберём всех, кто хоть раз записывался, из журнала Dikidi за выбранный срок — по месяцу за раз, это займёт пару минут.
+        Кто уже есть (по телефону), не задвоится; у них обновится дата последнего визита. Старые визиты в журнал ClinicHub
+        не переносятся, согласия на рекламу не ставятся.
+    </p>
+
+    <div class="m-actions">
+        <label for="h-years">За сколько назад</label>
+        <select id="h-years" @bind="years" disabled="@running" style="max-width: 160px">
+            <option value="1">1 год</option>
+            <option value="2">2 года</option>
+            <option value="3">3 года</option>
+            <option value="5">5 лет</option>
+        </select>
+        @if (running)
+        {
+            <button type="button" class="btn btn--outline" @onclick="Stop">Остановить</button>
+        }
+        else
+        {
+            <button type="button" class="btn btn--primary" @onclick="RunAsync">Начать</button>
+        }
+    </div>
+
+    @if (running || monthsDone > 0)
+    {
+        <div class="m-bar"><span style="width: @Pct%"></span></div>
+        <div class="muted small">@status</div>
+        <div class="m-grid">
+            <div class="m-stat m-stat--accent"><div class="muted small">Новых пациентов</div><div class="m-stat__value">@created</div></div>
+            <div class="m-stat"><div class="muted small">Записей просмотрено</div><div class="m-stat__value">@records</div></div>
+            <div class="m-stat"><div class="muted small">Без мобильного</div><div class="m-stat__value">@noPhone</div><div class="muted small">таких пропускаем</div></div>
+        </div>
+    }
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    private int years = 2, monthsTotal, monthsDone, created, records, noPhone;
+    private bool running;
+    private string? status, error;
+    private CancellationTokenSource? cts;
+
+    private int Pct => monthsTotal == 0 ? 0 : monthsDone * 100 / monthsTotal;
+
+    private void Stop() => cts?.Cancel();
+
+    private async Task RunAsync()
+    {
+        error = null;
+        created = records = noPhone = monthsDone = 0;
+        monthsTotal = years * 12;
+        running = true;
+        cts = new CancellationTokenSource();
+        var yesterday = DateOnly.FromDateTime(ClinicTime.ToLocal(DateTimeOffset.UtcNow).Date).AddDays(-1);
+        var to = yesterday;
+        try
+        {
+            for (var m = 0; m < monthsTotal; m++)
+            {
+                var from = new DateOnly(to.Year, to.Month, 1);
+                status = $"{ClinicTime.Ru.DateTimeFormat.MonthNames[from.Month - 1]} {from.Year}…";
+                StateHasChanged();
+
+                DikidiHistoryDto r;
+                try { r = await Api.DikidiHistoryAsync(from, to); }
+                catch (MailingApiException ex) when (ex.Status == System.Net.HttpStatusCode.Conflict)
+                {
+                    // Идёт обычная синхронизация — ждём и повторяем этот месяц.
+                    status = "Dikidi сейчас синхронизируется, ждём минуту…";
+                    StateHasChanged();
+                    await Task.Delay(TimeSpan.FromSeconds(60), cts.Token);
+                    m--;
+                    continue;
+                }
+                created += r.PatientsCreated;
+                records += r.Records;
+                noPhone += r.SkippedNoPhone;
+                monthsDone++;
+                to = from.AddDays(-1);
+                // Не торопим Dikidi: это их сервер, частые запросы могут принять за бота.
+                await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+            }
+            status = $"Готово: просмотрено {monthsDone} мес.";
+        }
+        catch (OperationCanceledException) { status = $"Остановлено. Просмотрено {monthsDone} мес. — можно продолжить позже, повторы не задвоятся."; }
+        catch (MailingApiException ex) { error = ex.Message; status = $"Просмотрено {monthsDone} мес."; }
+        finally
+        {
+            running = false;
+            if (created > 0)
+                await OnImported.InvokeAsync();
+        }
+    }
+
+    public void Dispose() => cts?.Cancel();
+}

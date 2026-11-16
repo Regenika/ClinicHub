@@ -13,12 +13,61 @@ public static class PatientsEndpoints
             .RequireAuthorization();
 
         group.MapGet("/", GetList);
+        group.MapGet("/audience", GetAudience);
         group.MapGet("/{id:int}", GetById);
         group.MapPost("/", Create);
+        group.MapPost("/import", Import);
         group.MapPut("/{id:int}", Update);
         group.MapDelete("/{id:int}", Delete);
 
         return app;
+    }
+
+    /// <summary>
+    /// Кому слать рассылку (мастер веб-панели, ADR-0012): all — все с телефоном; recent — были за months месяцев;
+    /// lost — не были дольше months месяцев (и нет будущей записи); service — делали услугу serviceId (по каталогу);
+    /// birthday — день рождения в месяце month (1–12). Возвращает id пациентов; согласия проверит расчёт рассылки.
+    /// </summary>
+    private static async Task<IResult> GetAudience(
+        Data.ClinicHubDbContext db, string? kind, int? months, string? serviceId, int? month, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var query = db.Patients.Where(p => p.Phone != "");
+        var m = Math.Clamp(months ?? 6, 1, 120);
+        switch ((kind ?? "all").ToLowerInvariant())
+        {
+            case "all":
+                break;
+            case "recent":
+                var since = now.AddMonths(-m);
+                query = query.Where(p => p.LastVisitAt != null && p.LastVisitAt >= since);
+                break;
+            case "lost":
+                var before = now.AddMonths(-m);
+                query = query.Where(p => p.LastVisitAt != null && p.LastVisitAt < before
+                    && !db.Visits.Any(v => v.PatientId == p.Id && v.StartAt > now
+                        && v.Status == Modules.Visits.VisitStatus.Planned));
+                break;
+            case "service":
+                if (string.IsNullOrWhiteSpace(serviceId))
+                    return Results.BadRequest("Выберите услугу.");
+                query = query.Where(p => db.VisitServices.Any(vs => vs.ServiceId == serviceId
+                    && vs.Visit!.PatientId == p.Id && vs.Visit.Status == Modules.Visits.VisitStatus.Completed));
+                break;
+            case "birthday":
+                if (month is not (>= 1 and <= 12))
+                    return Results.BadRequest("Укажите месяц от 1 до 12.");
+                // Месяц считаем в памяти: у даты рождения конвертер значения, и .Month в SQL не переводится.
+                var births = await query.Where(p => p.DateOfBirth != null)
+                    .Select(p => new { p.Id, p.DateOfBirth }).ToListAsync(ct);
+                var byMonth = births.Where(b => b.DateOfBirth!.Value.Month == month).Select(b => b.Id).OrderBy(i => i).ToList();
+                return Results.Ok(new { count = byMonth.Count, ids = byMonth });
+            default:
+                return Results.BadRequest("kind: all, recent, lost, service или birthday.");
+        }
+
+        var ids = await query.OrderBy(p => p.Id).Select(p => p.Id).Take(20000).ToListAsync(ct);
+        return Results.Ok(new { count = ids.Count, ids });
     }
 
     private static async Task<IResult> GetList(
@@ -86,6 +135,16 @@ public static class PatientsEndpoints
         if (dob.Date > today.AddYears(-age))
             age--;
         return age;
+    }
+
+    /// <summary>Загрузка клиентов из файла (Dikidi «Клиенты»). Не больше 5000 строк за раз; DryRun — только посчитать.</summary>
+    private static async Task<IResult> Import(PatientImportRequestDto dto, Data.ClinicHubDbContext db, CancellationToken ct)
+    {
+        if (dto.Rows.Count == 0)
+            return Results.BadRequest("В файле нет строк.");
+        if (dto.Rows.Count > Services.PatientImport.MaxRows)
+            return Results.BadRequest($"Не больше {Services.PatientImport.MaxRows} строк за раз.");
+        return Results.Ok(await Services.PatientImport.ApplyAsync(db, dto, ct));
     }
 
     private static async Task<IResult> GetById(int id, Data.ClinicHubDbContext db)
