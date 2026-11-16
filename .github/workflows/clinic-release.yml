@@ -6,6 +6,8 @@
 #         ClinicHub-Update-<версия>.zip  — обновление одним update.cmd (настройки и база сохраняются);
 #         ClinicHub-Api-<версия>.zip, ClinicHub-Web-<версия>.zip — первая установка, как раньше (deploy\README.txt).
 #     Релиз не помечается «последним»: ссылка releases/latest для телефона ведёт на APK SmsAgent.
+#   - ветка release/clinic-v<версия> (если теги не пушатся, например из облачной сессии Claude) — то же самое:
+#     релиз с тегом clinic-v<версия> создаёт сам workflow на коммите ветки;
 #   - вручную (Actions → «Релиз для клиники» → Run workflow) — только сборка, архивы в артефактах запуска.
 #
 # Сборка автономная (win-x64, self-contained): на компьютер клиники .NET ставить не нужно.
@@ -14,6 +16,7 @@ name: Релиз для клиники
 on:
   push:
     tags: ["clinic-v*"]
+    branches: ["release/clinic-v*"]
   workflow_dispatch:
 
 permissions:
@@ -53,9 +56,12 @@ jobs:
       - name: Версия
         id: ver
         run: |
-          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".Substring("clinic-v".Length) }
+          $ref = "${{ github.ref_name }}"
+          if ("${{ github.ref_type }}" -eq "tag") { $v = $ref.Substring("clinic-v".Length) }
+          elseif ($ref -like "release/clinic-v*") { $v = $ref.Substring("release/clinic-v".Length) }
           else { $v = (Get-Date -Format "yyyy.MM.dd") + "-test${{ github.run_number }}" }
           "version=$v" >> $env:GITHUB_OUTPUT
+          "release=$(if ("${{ github.event_name }}" -eq "push") { "true" } else { "false" })" >> $env:GITHUB_OUTPUT
           Write-Host "Версия: $v"
 
       - name: Тесты
@@ -96,7 +102,7 @@ jobs:
           retention-days: 30
 
       - name: Релиз
-        if: github.ref_type == 'tag'
+        if: steps.ver.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -107,4 +113,4 @@ jobs:
           **Обновить:** скачать ClinicHub-Update-$v.zip → распаковать → update.cmd. Настройки, база и тексты сайта сохраняются.
           **Первая установка:** ClinicHub-Api-$v.zip и ClinicHub-Web-$v.zip, по шагам из deploy\README.txt.
           "@
-          gh release create "${{ github.ref_name }}" artifacts/release/*.zip --title "Клиника $v" --notes $notes --latest=false
+          gh release create "clinic-v$v" artifacts/release/*.zip --target $env:GITHUB_SHA --title "Клиника $v" --notes $notes --latest=false
