@@ -1,0 +1,181 @@
+@using ClinicHub.Core.Dtos
+@inject MailingApi Api
+@inject ILogger<ImportClients> Log
+
+@* Загрузка клиентской базы из выгрузки Dikidi («Клиенты» → экспорт в Excel). Файл читается в памяти и не сохраняется. *@
+
+<div class="card card--soft stack">
+    <div class="admin-head">
+        <h2 class="h3">Загрузить клиентов из Dikidi</h2>
+        <button type="button" class="btn btn--outline btn--sm" @onclick="Close">Закрыть</button>
+    </div>
+    <ol style="margin: 0; padding-left: 20px; line-height: 1.7">
+        <li>В Dikidi откройте «Клиенты» и выгрузите список в Excel (кнопка экспорта над таблицей).</li>
+        <li>Выберите этот файл ниже — подойдёт .xlsx, .xls или .csv.</li>
+        <li>Проверьте колонки и нажмите «Проверить», затем «Загрузить».</li>
+    </ol>
+    <p class="muted small" style="margin: 0">
+        Кто уже есть в базе (по телефону), не задвоится: допишем только пустую дату рождения или почту.
+        Согласия на рекламу загрузка не ставит — их отмечают в карточке по анкете.
+    </p>
+
+    <InputFile OnChange="LoadAsync" accept=".xlsx,.xls,.csv" aria-label="Файл клиентов" disabled="@busy" />
+
+    @if (error is not null)
+    {
+        <div class="form-errors" role="alert">@error</div>
+    }
+
+    @if (file is not null)
+    {
+        <div class="muted small">Строк в файле: @file.Rows.Count</div>
+        <div class="admin-form__row">
+            @ColumnSelect("ФИО целиком", file.NameCol, v => file.NameCol = v)
+            @ColumnSelect("Фамилия", file.LastNameCol, v => file.LastNameCol = v)
+            @ColumnSelect("Имя", file.FirstNameCol, v => file.FirstNameCol = v)
+        </div>
+        <div class="admin-form__row">
+            @ColumnSelect("Телефон", file.PhoneCol, v => file.PhoneCol = v)
+            @ColumnSelect("Дата рождения", file.BirthCol, v => file.BirthCol = v)
+            @ColumnSelect("Почта", file.EmailCol, v => file.EmailCol = v)
+        </div>
+        @if (file.Ready)
+        {
+            <div class="stack-sm">
+                <div class="muted small">Так прочитаем первые строки:</div>
+                <ul class="m-list">
+                    @foreach (var r in file.Rows.Take(3))
+                    {
+                        <li class="m-cons"><span style="flex: 1 1 200px"><b>@file.NameOf(r)</b></span><span class="small">@file.PhoneOf(r)</span><span class="muted small">@(file.BirthOf(r)?.ToString("dd.MM.yyyy") ?? "без д. р.")</span></li>
+                    }
+                </ul>
+            </div>
+            <div class="m-actions">
+                <button type="button" class="btn btn--outline" disabled="@busy" @onclick="() => RunAsync(true)">Проверить</button>
+                @if (check is not null && check.Created + check.Updated > 0)
+                {
+                    <button type="button" class="btn btn--primary" disabled="@busy" @onclick="() => RunAsync(false)">Загрузить: новых @check.Created</button>
+                }
+                @if (busy)
+                {
+                    <span class="muted small">@progress</span>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="notice" role="note">Укажите колонку с телефоном и с именем (ФИО целиком или фамилию и имя).</div>
+        }
+        @if (check is not null)
+        {
+            <div class="m-grid">
+                <div class="m-stat m-stat--accent"><div class="muted small">@(done ? "Добавлено" : "Новых")</div><div class="m-stat__value">@check.Created</div></div>
+                <div class="m-stat"><div class="muted small">Уже были</div><div class="m-stat__value">@(check.Updated + check.Unchanged)</div><div class="muted small">дополнили: @check.Updated</div></div>
+                <div class="m-stat"><div class="muted small">Пропущено</div><div class="m-stat__value">@(check.BadPhone + check.Duplicates)</div><div class="muted small">без мобильного: @check.BadPhone, повторы: @check.Duplicates</div></div>
+            </div>
+            @if (done)
+            {
+                <div class="notice" role="status">Готово. Повторная загрузка того же файла ничего не задвоит.</div>
+            }
+        }
+    }
+</div>
+
+@code {
+    private const int Chunk = 2000;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    private ClientsFile? file;
+    private PatientImportResultDto? check;
+    private bool busy, done;
+    private string? error, progress;
+
+    private RenderFragment ColumnSelect(string label, int? value, Action<int?> set) => __builder =>
+    {
+        <div class="field">
+            <label>@label
+                <select value="@(value?.ToString() ?? "")" @onchange="@(e => OnColumn(e, set))">
+                    <option value="">— нет —</option>
+                    @for (var i = 0; i < file!.Headers.Count; i++)
+                    {
+                        var idx = i;
+                        <option value="@idx">@(string.IsNullOrWhiteSpace(file.Headers[idx]) ? $"Колонка {idx + 1}" : file.Headers[idx])</option>
+                    }
+                </select>
+            </label>
+        </div>
+    };
+
+    private void OnColumn(ChangeEventArgs e, Action<int?> set)
+    {
+        set(int.TryParse(e.Value?.ToString(), out var i) ? i : null);
+        check = null;
+        done = false;
+    }
+
+    private async Task LoadAsync(InputFileChangeEventArgs e)
+    {
+        error = null;
+        file = null;
+        check = null;
+        done = false;
+        busy = true;
+        try
+        {
+            if (e.File.Size > ClientsFile.MaxBytes)
+                throw new InvalidDataException("Файл больше 20 МБ — это точно выгрузка клиентов?");
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(ClientsFile.MaxBytes).CopyToAsync(ms);
+            ms.Position = 0;
+            file = ClientsFile.Read(ms, e.File.Name);
+            if (file.Rows.Count == 0)
+                error = "В файле нет строк с клиентами.";
+        }
+        catch (InvalidDataException ex) { error = ex.Message; }
+        catch (Exception ex)
+        {
+            // Только тип ошибки: содержимое файла — персональные данные.
+            Log.LogWarning("Не удалось прочитать файл клиентов: {Type}", ex.GetType().Name);
+            error = "Не получилось прочитать файл. Нужна выгрузка в Excel (.xlsx, .xls) или CSV.";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task RunAsync(bool dryRun)
+    {
+        if (file is null)
+            return;
+        busy = true;
+        error = null;
+        var rows = file.ToRows();
+        var total = new PatientImportResultDto();
+        try
+        {
+            for (var i = 0; i < rows.Count; i += Chunk)
+            {
+                progress = $"{Math.Min(i + Chunk, rows.Count)} из {rows.Count}…";
+                StateHasChanged();
+                var r = await Api.ImportPatientsAsync(new PatientImportRequestDto { Rows = rows.Skip(i).Take(Chunk).ToList(), DryRun = dryRun });
+                total.Total += r.Total;
+                total.Created += r.Created;
+                total.Updated += r.Updated;
+                total.Unchanged += r.Unchanged;
+                total.BadPhone += r.BadPhone;
+                total.Duplicates += r.Duplicates;
+            }
+            check = total;
+            done = !dryRun;
+            if (done)
+                await OnImported.InvokeAsync();
+        }
+        catch (MailingApiException ex)
+        {
+            error = ex.Message + (dryRun ? "" : " Часть могла загрузиться — загрузите файл ещё раз, повторы не задвоятся.");
+        }
+        finally { busy = false; progress = null; }
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+}

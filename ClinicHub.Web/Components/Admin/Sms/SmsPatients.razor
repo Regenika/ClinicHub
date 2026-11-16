@@ -11,8 +11,16 @@
 <section class="stack-lg">
     <div class="admin-head">
         <h1 class="h2">Пациенты</h1>
-        <button type="button" class="btn btn--outline" @onclick="StartNew">Добавить пациента</button>
+        <div class="m-actions">
+            <button type="button" class="btn btn--primary" @onclick="() => importing = !importing">Загрузить из Dikidi</button>
+            <button type="button" class="btn btn--outline" @onclick="StartNew">Добавить пациента</button>
+        </div>
     </div>
+
+    @if (importing)
+    {
+        <ImportClients OnClose="() => importing = false" OnImported="ReloadAsync" />
+    }
 
     @if (message is not null)
     {
@@ -145,6 +153,7 @@
     private string? markRef, error, message;
     private bool loading = true, busy;
     private CancellationTokenSource? cts;
+    private bool importing;
     private const int Page = 100, MaxShown = 2000;
     private int shown = Page, total = -1;
 
@@ -190,6 +199,18 @@
             list = await Api.PatientsAsync(query, shown);
         }
         catch (TaskCanceledException) { }
+        catch (MailingApiException ex) { error = ex.Message; }
+    }
+
+    private async Task ReloadAsync()
+    {
+        query = "";
+        shown = Page;
+        try
+        {
+            list = await Api.PatientsAsync(null, shown);
+            total = (await Api.AudienceAsync("all")).Count;
+        }
         catch (MailingApiException ex) { error = ex.Message; }
     }
 

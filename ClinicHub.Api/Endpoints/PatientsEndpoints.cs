@@ -16,6 +16,7 @@ public static class PatientsEndpoints
         group.MapGet("/audience", GetAudience);
         group.MapGet("/{id:int}", GetById);
         group.MapPost("/", Create);
+        group.MapPost("/import", Import);
         group.MapPut("/{id:int}", Update);
         group.MapDelete("/{id:int}", Delete);
 
@@ -134,6 +135,16 @@ public static class PatientsEndpoints
         if (dob.Date > today.AddYears(-age))
             age--;
         return age;
+    }
+
+    /// <summary>Загрузка клиентов из файла (Dikidi «Клиенты»). Не больше 5000 строк за раз; DryRun — только посчитать.</summary>
+    private static async Task<IResult> Import(PatientImportRequestDto dto, Data.ClinicHubDbContext db, CancellationToken ct)
+    {
+        if (dto.Rows.Count == 0)
+            return Results.BadRequest("В файле нет строк.");
+        if (dto.Rows.Count > Services.PatientImport.MaxRows)
+            return Results.BadRequest($"Не больше {Services.PatientImport.MaxRows} строк за раз.");
+        return Results.Ok(await Services.PatientImport.ApplyAsync(db, dto, ct));
     }
 
     private static async Task<IResult> GetById(int id, Data.ClinicHubDbContext db)

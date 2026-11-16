@@ -52,6 +52,7 @@ public sealed class MailingApi(HttpClient http, MailingApiOptions options, Authe
         GetAsync<List<PatientDto>>($"api/patients?take={take}" + (string.IsNullOrWhiteSpace(search) ? "" : "&search=" + Uri.EscapeDataString(search.Trim())));
     public Task<PatientDto> PatientAsync(int id) => GetAsync<PatientDto>($"api/patients/{id}");
     public Task<PatientDto> CreatePatientAsync(PatientInputDto dto) => PostAsync<PatientDto>("api/patients", dto);
+    public Task<PatientImportResultDto> ImportPatientsAsync(PatientImportRequestDto dto) => PostAsync<PatientImportResultDto>("api/patients/import", dto);
     public Task<AudienceDto> AudienceAsync(string kind, int? months = null, string? serviceId = null, int? month = null) =>
         GetAsync<AudienceDto>($"api/patients/audience?kind={kind}"
             + (months is int m ? $"&months={m}" : "") + (serviceId is null ? "" : "&serviceId=" + Uri.EscapeDataString(serviceId))
