@@ -99,7 +99,8 @@ public sealed class DikidiSync(
     {
         var now = clock.GetUtcNow().UtcDateTime;
         int created = 0, noPhone = 0;
-        var lastVisitFor = new HashSet<int>();
+        var lastVisitFor = new HashSet<Patient>(ReferenceEqualityComparer.Instance);
+        var fresh = new HashSet<Patient>(ReferenceEqualityComparer.Instance);
 
         var byPhone = new Dictionary<string, Patient>();
         foreach (var p in await db.Patients.OrderBy(p => p.Id).ToListAsync(ct))
@@ -126,6 +127,7 @@ public sealed class DikidiSync(
                 };
                 db.Patients.Add(patient);
                 byPhone[phone] = patient;
+                fresh.Add(patient);
                 created++;
             }
 
@@ -133,8 +135,9 @@ public sealed class DikidiSync(
             var startAt = MoscowTime.ToUtc(r.Date, r.Start);
             if (r.State == DikidiRecordState.Active && startAt < now && (patient.LastVisitAt is null || patient.LastVisitAt < startAt))
             {
-                if (patient.Id != 0)
-                    lastVisitFor.Add(patient.Id);
+                // Id у нового пациента не опора: провайдер может выдать его ещё до сохранения.
+                if (!fresh.Contains(patient))
+                    lastVisitFor.Add(patient);
                 patient.LastVisitAt = startAt;
             }
         }
