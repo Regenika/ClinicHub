@@ -1,3 +1,5 @@
+using ClinicHub.Api.Modules.Consents;
+using ClinicHub.Api.Modules.Shared;
 using ClinicHub.Api.Services;
 using ClinicHub.Core.Dtos;
 using ClinicHub.Core.Entities;
@@ -21,6 +23,12 @@ public static class RequestsEndpoints
         group.MapPost("/{id:int}/reject", Reject).RequireAuthorization(new AuthorizeAttribute { Roles = "Admin" });
         group.MapPost("/{id:int}/send-now", SendNow);
         group.MapGet("/{id:int}/status", GetStatus);
+        // Веб-панель (ADR-0012): пауза, продолжение и остановка рассылки, расчёт до запуска, журнал по получателям.
+        group.MapPost("/{id:int}/pause", Pause);
+        group.MapPost("/{id:int}/resume", Resume);
+        group.MapPost("/{id:int}/cancel", Cancel);
+        group.MapPost("/estimate", Estimate);
+        group.MapGet("/recipients", GetRecipients);
 
         return app;
     }
@@ -112,9 +120,10 @@ public static class RequestsEndpoints
         if (PurposeError(dto) is { } purposeError)
             return Results.BadRequest(purposeError);
 
+        // Шага «одобрить» больше нет (ADR-0012): проверка — в мастере перед запуском, согласия — при отправке.
         var request = await CreateRequestCoreAsync(
             dto, db, http.HttpContext?.User.GetUserId(),
-            approveAutomatically: false, ct);
+            approveAutomatically: true, ct);
 
         if (request == null)
             return Results.BadRequest("Не удалось собрать получателей или текст сообщения.");
@@ -210,6 +219,9 @@ public static class RequestsEndpoints
                     continue;
             }
 
+            text = Personalize(text, input.PatientId is int id2
+                ? (await db.Patients.Where(p => p.Id == id2).Select(p => p.FullName).FirstOrDefaultAsync(ct))
+                : null);
             if (string.IsNullOrWhiteSpace(text))
                 continue;
 
@@ -233,6 +245,213 @@ public static class RequestsEndpoints
         await db.SaveChangesAsync(ct);
 
         return request;
+    }
+
+    /// <summary>
+    /// Подстановка имени: {name} или {Имя} — ФИО пациента, как оно записано в карточке. Получателю не из базы
+    /// подставлять нечего: убираем метку и висящую запятую в начале.
+    /// </summary>
+    public static string Personalize(string text, string? fullName)
+    {
+        var name = fullName?.Trim() ?? "";
+        var result = text
+            .Replace("{name}", name, StringComparison.OrdinalIgnoreCase)
+            .Replace("{Имя}", name, StringComparison.OrdinalIgnoreCase);
+        if (name.Length == 0)
+            result = result.TrimStart(' ', ',', '!').TrimStart();
+        return result.Trim();
+    }
+
+    /// <summary>Пауза: снимаем из очереди то, что ещё не выдано телефонам. Уже выданное телефону уйдёт.</summary>
+    private static async Task<IResult> Pause(int id, Data.ClinicHubDbContext db, CancellationToken ct)
+    {
+        var request = await db.SmsRequests.Include(r => r.Recipients).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (request is null)
+            return Results.NotFound();
+        if (request.Status is not (RequestStatus.Created or RequestStatus.Approved or RequestStatus.Scheduled or RequestStatus.Sending))
+            return Results.BadRequest("Приостановить можно только рассылку, которая ещё идёт.");
+
+        await DequeuePendingAsync(db, request, ct);
+        request.Status = RequestStatus.Paused;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { request.Id, Status = request.Status.ToString() });
+    }
+
+    private static async Task<IResult> Resume(int id, Data.ClinicHubDbContext db, CancellationToken ct)
+    {
+        var request = await db.SmsRequests.FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (request is null)
+            return Results.NotFound();
+        if (request.Status != RequestStatus.Paused)
+            return Results.BadRequest("Рассылка не на паузе.");
+        // Approved → планировщик заново поставит в очередь всех, кто ещё ждёт.
+        request.Status = RequestStatus.Approved;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { request.Id, Status = request.Status.ToString() });
+    }
+
+    /// <summary>Остановить насовсем: неотправленным — «Пропущено: рассылку остановили».</summary>
+    private static async Task<IResult> Cancel(int id, Data.ClinicHubDbContext db, CancellationToken ct)
+    {
+        var request = await db.SmsRequests.Include(r => r.Recipients).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (request is null)
+            return Results.NotFound();
+        if (request.Status is RequestStatus.Sent or RequestStatus.Failed or RequestStatus.Partial or RequestStatus.Rejected)
+            return Results.BadRequest("Рассылка уже закончена.");
+
+        await DequeuePendingAsync(db, request, ct);
+        foreach (var rec in request.Recipients.Where(r => r.Status is RecipientStatus.Pending or RecipientStatus.Scheduled))
+        {
+            rec.Status = RecipientStatus.Skipped;
+            rec.SkipReason = "рассылку остановили";
+        }
+        request.Status = request.Recipients.Any(r => r.Status == RecipientStatus.Sent) ? RequestStatus.Partial : RequestStatus.Rejected;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { request.Id, Status = request.Status.ToString() });
+    }
+
+    private static async Task DequeuePendingAsync(Data.ClinicHubDbContext db, SmsRequest request, CancellationToken ct)
+    {
+        var recipientIds = request.Recipients.Select(r => r.Id).ToList();
+        var pending = await db.SmsQueue
+            .Where(q => q.Status == QueueItemStatus.Pending && recipientIds.Contains(q.RecipientId))
+            .ToListAsync(ct);
+        db.SmsQueue.RemoveRange(pending);
+        var back = pending.Select(q => q.RecipientId).ToHashSet();
+        foreach (var rec in request.Recipients.Where(r => back.Contains(r.Id) && r.Status == RecipientStatus.Scheduled))
+            rec.Status = RecipientStatus.Pending;
+    }
+
+    /// <summary>
+    /// Расчёт до запуска (мастер «Новая рассылка», шаг «Проверка»): сколько получат, кого и почему пропустим,
+    /// сколько SMS и когда закончим при текущих лимитах SIM и окне отправки. Ничего не сохраняет.
+    /// </summary>
+    private static async Task<IResult> Estimate(
+        CreateSmsRequestDto dto, Data.ClinicHubDbContext db, IConsentChecker consents, CancellationToken ct)
+    {
+        if (PurposeError(dto) is { } purposeError)
+            return Results.BadRequest(purposeError);
+        var purpose = dto.Purpose!.Value;
+        var now = DateTime.UtcNow;
+
+        var inputs = new List<RecipientInputDto>(dto.Recipients);
+        if (dto.AllSubscribers)
+            inputs.AddRange(await db.Patients.Where(p => p.IsSubscribed)
+                .Select(p => new RecipientInputDto { PatientId = p.Id }).ToListAsync(ct));
+
+        var ids = inputs.Where(i => i.PatientId != null).Select(i => i.PatientId!.Value).Distinct().ToList();
+        var patients = await db.Patients.Where(p => ids.Contains(p.Id))
+            .Select(p => new { p.Id, p.FullName, p.Phone }).ToDictionaryAsync(p => p.Id, ct);
+        var decisions = ids.Count > 0
+            ? await consents.CheckManyAsync(ids, purpose, ConsentChannel.Sms, now, ct)
+            : new Dictionary<int, ConsentDecision>();
+
+        var skipped = new Dictionary<string, int>();
+        void Skip(string reason) => skipped[reason] = skipped.GetValueOrDefault(reason) + 1;
+        var recv = 0;
+        var maxSegments = 0;
+        var seen = new HashSet<int>();
+        foreach (var input in inputs)
+        {
+            string? name = null;
+            var phone = input.Phone;
+            if (input.PatientId is int pid)
+            {
+                if (!seen.Add(pid))
+                    continue;
+                if (!patients.TryGetValue(pid, out var p)) { Skip("пациент удалён"); continue; }
+                name = p.FullName;
+                phone ??= p.Phone;
+            }
+            if (string.IsNullOrWhiteSpace(phone)) { Skip("нет телефона в карточке"); continue; }
+            var decision = input.PatientId is int id ? decisions[id] : ConsentRules.ForUnknownRecipient(purpose);
+            if (!decision.Allowed) { Skip(decision.Reason); continue; }
+            recv++;
+            var text = Personalize(input.MessageText ?? dto.TextTemplate ?? "", name);
+            maxSegments = Math.Max(maxSegments, SmsSegmentCalculator.CountSegments(text));
+        }
+
+        // Скорость: сумма минутных лимитов включённых SIM на включённых телефонах; окно — из настроек отправки.
+        var sims = await db.SimCards.Where(s => s.IsActive && s.Phone != null && s.Phone.IsActive)
+            .Select(s => new { s.LimitPerMinute, s.LimitPerDay }).ToListAsync(ct);
+        var rate = await db.RateConfigs.Where(r => r.IsActive).FirstOrDefaultAsync(ct) ?? new RateConfig();
+        var perMinute = Math.Max(1, sims.Sum(s => Math.Max(1, s.LimitPerMinute)));
+        var perDay = Math.Max(1, sims.Sum(s => Math.Max(1, s.LimitPerDay)));
+        var start = dto.SendMode == SendMode.Custom && dto.PlannedSendAt is DateTime planned && planned > now ? planned : now;
+        var finish = recv > 0 ? EstimateFinish(start, recv, perMinute, perDay, rate.SendWindowFrom, rate.SendWindowTo) : (DateTime?)null;
+
+        return Results.Ok(new RequestEstimateDto
+        {
+            Total = seen.Count + inputs.Count(i => i.PatientId == null),
+            Recipients = recv,
+            Skipped = skipped.Select(kv => new SkipGroupDto { Reason = kv.Key, Count = kv.Value }).OrderByDescending(g => g.Count).ToList(),
+            SegmentsPerMessage = maxSegments,
+            TotalSms = recv * Math.Max(1, maxSegments),
+            Phones = sims.Count,
+            PerMinute = perMinute,
+            StartsAt = start,
+            FinishesAt = finish,
+        });
+    }
+
+    /// <summary>Когда закончится отправка count сообщений со скоростью perMinute, только в окне [from; to] по Москве.</summary>
+    public static DateTime EstimateFinish(DateTime startUtc, int count, int perMinute, int perDay, TimeSpan from, TimeSpan to)
+    {
+        var t = MoscowTime.ToMoscow(startUtc);
+        var left = count;
+        for (var guard = 0; guard < 400 && left > 0; guard++)
+        {
+            var dayStart = t.Date + from;
+            var dayEnd = t.Date + to;
+            if (t < dayStart) t = dayStart;
+            if (t >= dayEnd) { t = t.Date.AddDays(1) + from; continue; }
+            var canToday = Math.Min(perDay, (int)((dayEnd - t).TotalMinutes * perMinute));
+            if (left <= canToday)
+            {
+                t = t.AddMinutes(Math.Ceiling((double)left / perMinute));
+                left = 0;
+                break;
+            }
+            left -= canToday;
+            t = t.Date.AddDays(1) + from;
+        }
+        return MoscowTime.ToUtc(DateOnly.FromDateTime(t), TimeOnly.FromDateTime(t));
+    }
+
+    /// <summary>Журнал по получателям всех рассылок: что ушло, что нет и почему (раздел «Журнал» панели).</summary>
+    private static async Task<IResult> GetRecipients(Data.ClinicHubDbContext db, string? status, int? requestId, int? patientId, int? take)
+    {
+        var query = db.RequestRecipients.AsQueryable();
+        if (Enum.TryParse<RecipientStatus>(status, true, out var st))
+            query = query.Where(r => r.Status == st);
+        if (requestId is int rid)
+            query = query.Where(r => r.RequestId == rid);
+        if (patientId is int pid)
+            query = query.Where(r => r.PatientId == pid);
+
+        var rows = await query
+            .OrderByDescending(r => r.SentAt ?? r.SendAfter ?? r.Request!.CreatedAt)
+            .Take(Math.Clamp(take ?? 200, 1, 1000))
+            .Select(r => new RecipientLogDto
+            {
+                Id = r.Id,
+                RequestId = r.RequestId,
+                RequestTitle = r.Request!.Title,
+                RequestType = r.Request.Type.ToString(),
+                Purpose = r.Request.Purpose.ToString(),
+                PatientId = r.PatientId,
+                PatientName = r.Patient != null ? r.Patient.FullName : null,
+                Phone = r.Phone,
+                MessageText = r.MessageText,
+                Status = r.Status.ToString(),
+                SkipReason = r.SkipReason,
+                SendAfter = r.SendAfter,
+                SentAt = r.SentAt,
+                CreatedAt = r.Request.CreatedAt,
+                LastError = r.QueueItems.OrderByDescending(q => q.Id).Select(q => q.LastError).FirstOrDefault(),
+            })
+            .ToListAsync();
+        return Results.Ok(rows);
     }
 
     private static async Task<IResult> Approve(

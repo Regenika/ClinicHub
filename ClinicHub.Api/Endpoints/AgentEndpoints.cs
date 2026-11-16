@@ -363,6 +363,10 @@ public static class AgentEndpoints
         {
             request.Status = final;
         }
+        else if (request.Status is RequestStatus.Paused or RequestStatus.Rejected)
+        {
+            // Пауза или остановка из панели: отчёт за уже выданное телефону сообщение статус не меняет.
+        }
         else if (sent > 0 || failed > 0)
         {
             request.Status = RequestStatus.Sending;

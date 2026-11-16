@@ -117,7 +117,19 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 // ── Аутентификация JWT ──────────────────────────────────────────────────────
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+// По умолчанию — JWT (программа администратора, телефоны). Запросы веб-панели с сайта на этом же компьютере
+// приходят с ключом панели (ADR-0012) — их разбирает отдельная схема.
+builder.Services.AddSingleton<PanelKeyStore>();
+builder.Services.AddAuthentication(o =>
+    {
+        o.DefaultScheme = "JwtOrPanel";
+        o.DefaultChallengeScheme = "JwtOrPanel";
+    })
+    .AddPolicyScheme("JwtOrPanel", "JWT или ключ панели", o =>
+        o.ForwardDefaultSelector = ctx => ctx.Request.Headers.ContainsKey(PanelAuth.KeyHeader)
+            ? PanelAuth.Scheme
+            : JwtBearerDefaults.AuthenticationScheme)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, PanelAuthHandler>(PanelAuth.Scheme, null)
     .AddJwtBearer(options =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
@@ -146,6 +158,9 @@ builder.Services.AddOpenApi(o =>
 });
 
 var app = builder.Build();
+
+// Ключ веб-панели создаём сразу: сайт читает его из файла ещё до первого запроса к серверу.
+_ = app.Services.GetRequiredService<PanelKeyStore>().Key;
 
 // ── Инициализация БД и seed ─────────────────────────────────────────────────
 // Миграции и начальные данные — в DatabaseStartupService, уже после запуска: если базы нет, сервер не падает,

@@ -21,7 +21,10 @@ public enum RequestStatus
     Sent,
     Partial,
     Failed,
+    /// <summary>Остановлена человеком (или не одобрена в старой программе администратора).</summary>
     Rejected,
+    /// <summary>На паузе: неотправленные ждут, пока рассылку не продолжат (веб-панель, ADR-0012).</summary>
+    Paused,
 }
 
 /// <summary>
